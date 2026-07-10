@@ -63,8 +63,8 @@ export function resolveDateRange(
       return { start: undefined, end: undefined };
 
     default:
-      // No preset or unrecognised — let BigQuery use its 30-day default
-      return { start: undefined, end: undefined };
+      // No preset — default to last 3 days for a useful initial view
+      return { start: daysAgo(3), end: today() };
   }
 }
 
@@ -97,6 +97,6 @@ export function buildRangeLabel(
       return 'Custom Range';
     }
     default:
-      return 'Last 30 Days';
+      return 'Last 3 Days';
   }
 }

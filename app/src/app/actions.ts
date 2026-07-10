@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { parse } from 'csv-parse/sync';
+
 import {
   updateSetting,
   replaceUserMappings,
@@ -44,6 +44,7 @@ export async function uploadUserMappings(formData: FormData) {
     }
 
     const text = Buffer.from(await file.arrayBuffer()).toString();
+    const { parse } = await import('csv-parse/sync');
     const records = parse(text, {
       columns: true,
       skip_empty_lines: true,
