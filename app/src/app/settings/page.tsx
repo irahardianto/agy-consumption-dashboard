@@ -2,33 +2,11 @@
 export const dynamic = 'force-dynamic';
 
 import React from 'react';
-import { getSettings } from '@/lib/settings';
-import { PRICING_DEFAULTS } from '@/lib/cost';
-import { DataTable } from '@/components/DataTable';
+import { getPricingSettings } from '@/lib/settings';
+import { PricingForm } from '@/components/PricingForm';
 
 export default async function SettingsPage() {
-  const settings = await getSettings();
-
-  const pricingData = Object.entries(PRICING_DEFAULTS).map(([model, pricing]) => ({
-    model,
-    input: pricing.input,
-    output: pricing.output,
-  }));
-
-  const pricingColumns = [
-    { header: 'Model', accessor: 'model' as const },
-    { header: 'Input ($/1M)', accessor: 'input' as const, align: 'right' as const },
-    { header: 'Output ($/1M)', accessor: 'output' as const, align: 'right' as const },
-    { 
-      header: 'Actions', 
-      accessor: () => (
-        <button style={{ color: 'var(--md-sys-color-primary)', fontWeight: '600', fontSize: '12px' }}>
-          EDIT
-        </button>
-      ),
-      align: 'right' as const
-    }
-  ];
+  const pricing = await getPricingSettings();
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '48px' }}>
@@ -39,23 +17,8 @@ export default async function SettingsPage() {
         </p>
       </header>
 
-      <section style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-          <div>
-            <h3 style={{ fontSize: '18px', fontWeight: '600' }}>Model Pricing</h3>
-            <p style={{ fontSize: '14px', color: 'var(--md-sys-color-on-surface-variant)' }}>
-              Inferred costs are calculated based on these rates.
-            </p>
-          </div>
-          <button className="button-primary">
-            <span className="icon">refresh</span>
-            Reset to Defaults
-          </button>
-        </div>
-        <div className="card" style={{ padding: 0 }}>
-          <DataTable data={pricingData} columns={pricingColumns} />
-        </div>
-      </section>
+      <PricingForm initialPricing={pricing} />
+
 
       <section style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>

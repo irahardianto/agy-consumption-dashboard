@@ -1,0 +1,318 @@
+.filterContainer {
+  position: relative;
+  display: inline-block;
+}
+
+/* ─── Trigger Button ───────────────────────────────────────────────── */
+
+.trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: var(--md-sys-shape-corner-small);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  background-color: var(--md-sys-color-surface-container-low);
+  color: var(--md-sys-color-on-surface);
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color 150ms ease-out,
+    border-color 150ms ease-out,
+    box-shadow 150ms ease-out;
+  white-space: nowrap;
+  outline: none;
+}
+
+.trigger:hover {
+  background-color: var(--md-sys-color-surface-container);
+  border-color: var(--md-sys-color-outline);
+}
+
+.trigger:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
+}
+
+.trigger .calendarIcon {
+  font-size: 18px;
+  color: var(--md-sys-color-primary);
+}
+
+.trigger .chevron {
+  font-size: 18px;
+  color: var(--md-sys-color-on-surface-variant);
+  transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.triggerActive {
+  border-color: var(--md-sys-color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--md-sys-color-primary) 25%, transparent);
+}
+
+.triggerActive .chevron {
+  transform: rotate(180deg);
+}
+
+/* ─── Skeleton fallback ─────────────────────────────────────────────── */
+
+.filterSkeleton {
+  width: 180px;
+  height: 40px;
+  border-radius: var(--md-sys-shape-corner-small);
+  background-color: var(--md-sys-color-surface-container);
+  animation: skeletonPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes skeletonPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ─── Popover Panel ─────────────────────────────────────────────────── */
+
+.popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  background-color: var(--md-sys-color-surface-container-low);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-medium);
+  box-shadow: var(--md-sys-elevation-3);
+  z-index: 300;
+  display: flex;
+  overflow: hidden;
+
+  /* Width transitions between preset-only (180px) and full (520px) */
+  width: 200px;
+  transition: width 250ms cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Entrance animation */
+  animation: popoverIn 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.popoverWide {
+  width: 520px;
+}
+
+@keyframes popoverIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ─── Preset List ───────────────────────────────────────────────────── */
+
+.presetList {
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  min-width: 184px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--md-sys-color-outline-variant);
+}
+
+/* Hide preset list border when not wide */
+.popover:not(.popoverWide) .presetList {
+  border-right: none;
+}
+
+.presetButton {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: var(--md-sys-shape-corner-extra-small);
+  background: transparent;
+  color: var(--md-sys-color-on-surface);
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 150ms ease-out;
+  border: none;
+  outline: none;
+}
+
+.presetButton:hover {
+  background-color: var(--md-sys-color-surface-container);
+}
+
+.presetButton:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: -2px;
+}
+
+.presetButtonActive {
+  background-color: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-on-primary-container);
+  font-weight: 600;
+}
+
+.presetButtonActive:hover {
+  background-color: var(--md-sys-color-primary-container);
+}
+
+/* ─── Custom Date Section ───────────────────────────────────────────── */
+
+.customSection {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.customSectionTitle {
+  font-family: 'Outfit', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--md-sys-color-on-surface-variant);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.dateInputGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dateInputLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--md-sys-color-on-surface-variant);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.dateInput {
+  padding: 8px 12px;
+  border-radius: var(--md-sys-shape-corner-small);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  background-color: var(--md-sys-color-surface-container);
+  color: var(--md-sys-color-on-surface);
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  outline: none;
+  transition: border-color 150ms ease-out, box-shadow 150ms ease-out;
+  width: 100%;
+  cursor: pointer;
+  color-scheme: light dark;
+}
+
+.dateInput:hover {
+  border-color: var(--md-sys-color-outline);
+}
+
+.dateInput:focus {
+  border-color: var(--md-sys-color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--md-sys-color-primary) 25%, transparent);
+}
+
+.customActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.cancelButton {
+  padding: 8px 16px;
+  border-radius: var(--md-sys-shape-corner-full);
+  background: transparent;
+  border: none;
+  color: var(--md-sys-color-on-surface-variant);
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 150ms ease-out;
+  outline: none;
+}
+
+.cancelButton:hover {
+  background-color: var(--md-sys-color-surface-container);
+}
+
+.cancelButton:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
+}
+
+.applyButton {
+  padding: 8px 20px;
+  border-radius: var(--md-sys-shape-corner-full);
+  background-color: var(--md-sys-color-primary);
+  border: none;
+  color: var(--md-sys-color-on-primary);
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 150ms ease-out;
+  outline: none;
+}
+
+.applyButton:hover {
+  opacity: 0.9;
+  box-shadow: var(--md-sys-elevation-1);
+}
+
+.applyButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.applyButton:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
+}
+
+/* ─── Pending indicator ─────────────────────────────────────────────── */
+
+.pending {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+/* ─── Scrim for click-outside detection on mobile ───────────────────── */
+@media (max-width: 640px) {
+  .popover {
+    position: fixed;
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100% !important;
+    border-radius: 24px 24px 0 0;
+    animation: bottomSheetUp 250ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  @keyframes bottomSheetUp {
+    from {
+      opacity: 0;
+      transform: translateY(100%);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}

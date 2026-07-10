@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { bq } from './bigquery';
 import logger from './logger';
+import { PricingConfig, getPricingFromSettings } from './cost';
 
 export const SettingSchema = z.object({
   key: z.string(),
@@ -91,6 +92,44 @@ export async function replaceUserMappings(mappings: UserMapping[]): Promise<void
     logger.info({ count: mappings.length, operation: 'replace_user_mappings' }, 'User mappings replaced successfully');
   } catch (error) {
     logger.error({ error, operation: 'replace_user_mappings' }, 'Failed to replace user mappings');
+    throw error;
+  }
+}
+
+/**
+ * Loads custom model pricing configurations from the BigQuery settings table.
+ * Merges loaded overrides onto PRICING_DEFAULTS.
+ */
+export async function getPricingSettings(): Promise<PricingConfig> {
+  const settings = await getSettings();
+  return getPricingFromSettings(settings);
+}
+
+/**
+ * Updates pricing rate overrides in the settings table.
+ * Executes an idempotent MERGE statement in BigQuery for each updated key.
+ * 
+ * @param pricing Structured map of model configurations to save.
+ */
+export async function updatePricing(pricing: PricingConfig): Promise<void> {
+  const promises = Object.entries(pricing).flatMap(([model, rates]) => [
+    updateSetting(`pricing:${model}:input`, rates.input.toString()),
+    updateSetting(`pricing:${model}:output`, rates.output.toString()),
+  ]);
+  await Promise.all(promises);
+}
+
+/**
+ * Resets custom model pricing by clearing all keys prefixed with "pricing:" 
+ * from the database settings table.
+ */
+export async function resetPricingToDefaults(): Promise<void> {
+  const query = `DELETE FROM \`${DATASET}.${SETTINGS_TABLE}\` WHERE key LIKE 'pricing:%'`;
+  try {
+    await bq.query(query);
+    logger.info({ operation: 'reset_pricing_to_defaults' }, 'Model pricing reset to defaults successfully');
+  } catch (error) {
+    logger.error({ error, operation: 'reset_pricing_to_defaults' }, 'Failed to reset model pricing');
     throw error;
   }
 }

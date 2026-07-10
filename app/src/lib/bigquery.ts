@@ -1,5 +1,6 @@
 import { BigQuery, type Query } from '@google-cloud/bigquery';
 import logger from './logger';
+import { redistributeUnattributed } from './cost';
 
 /**
  * BigQuery client wrapper using the Singleton pattern.
@@ -94,12 +95,15 @@ export interface UsageDataPoint {
   day: string;
   tokens: number;
   requests: number;
+  cost: number;
   model: string;
 }
 
 export interface UserUsage {
   os_username: string;
   displayName: string;
+  email: string | null;
+  team: string | null;
   requests: number;
   input_tokens: number;
   output_tokens: number;
@@ -109,25 +113,84 @@ export interface UserUsage {
 
 const DATASET = process.env.BQ_DATASET || 'agy_consumption';
 
-export async function getOverviewMetrics(): Promise<OverviewMetrics> {
+/**
+ * Format a Date object or string as YYYY-MM-DD.
+ * Handles UTC midnight dates properly to prevent timezone shift issues.
+ */
+function formatDate(date?: Date | string): string | null {
+  if (!date) return null;
+  if (date instanceof Date) {
+    if (
+      date.getUTCHours() === 0 &&
+      date.getUTCMinutes() === 0 &&
+      date.getUTCSeconds() === 0 &&
+      date.getUTCMilliseconds() === 0
+    ) {
+      const yyyy = date.getUTCFullYear();
+      const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
+      const dd = String(date.getUTCDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    }
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+  return date;
+}
+
+export async function getOverviewMetrics(
+  startDate?: Date | string,
+  endDate?: Date | string
+): Promise<OverviewMetrics> {
   const query = `
+    WITH pricing AS (
+      SELECT
+        SPLIT(key, ':')[SAFE_OFFSET(1)] AS model,
+        MAX(CASE WHEN ENDS_WITH(key, ':input') THEN CAST(value AS FLOAT64) END) AS input_cost_per_m,
+        MAX(CASE WHEN ENDS_WITH(key, ':output') THEN CAST(value AS FLOAT64) END) AS output_cost_per_m
+      FROM \`${DATASET}.dashboard_settings\`
+      WHERE key LIKE 'pricing:%'
+      GROUP BY 1
+    )
     SELECT 
-      SUM(request_count) as totalRequests,
-      COUNT(DISTINCT os_username) as activeUsers,
-      SUM(total_tokens) as totalTokens,
-      SUM(
-        CASE 
-          WHEN model LIKE '%pro%' THEN (input_tokens / 1000000) * 1.25 + (output_tokens / 1000000) * 3.75
-          WHEN model LIKE '%flash%' THEN (input_tokens / 1000000) * 0.075 + (output_tokens / 1000000) * 0.3
-          ELSE 0
-        END
-      ) as totalCost
-    FROM \`${DATASET}.usage_summary_daily\`
-    WHERE day >= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)
+      COALESCE(SUM(u.request_count), 0) AS totalRequests,
+      COUNT(DISTINCT CASE WHEN u.os_username != '__unattributed__' THEN u.os_username END) AS activeUsers,
+      COALESCE(SUM(u.total_tokens), 0) AS totalTokens,
+      COALESCE(SUM(
+        (u.input_tokens / 1000000) * COALESCE(
+          p.input_cost_per_m,
+          CASE 
+            WHEN u.model LIKE '%pro%' THEN 1.25 
+            WHEN u.model LIKE '%flash%' THEN 0.075 
+            ELSE 0.0 
+          END
+        ) + 
+        (u.output_tokens / 1000000) * COALESCE(
+          p.output_cost_per_m,
+          CASE 
+            WHEN u.model LIKE '%pro%' THEN 3.75 
+            WHEN u.model LIKE '%flash%' THEN 0.30 
+            ELSE 0.0 
+          END
+        )
+      ), 0.0) AS totalCost
+    FROM \`${DATASET}.usage_summary_daily\` u
+    LEFT JOIN pricing p ON u.model = p.model
+    WHERE u.day >= COALESCE(CAST(@startDate AS DATE), DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY))
+      AND u.day <= COALESCE(CAST(@endDate AS DATE), CURRENT_DATE())
   `;
 
+  const options = {
+    query,
+    params: {
+      startDate: formatDate(startDate),
+      endDate: formatDate(endDate),
+    },
+  };
+
   try {
-    const rows = await bq.query<any>(query);
+    const rows = await bq.query<any>(options);
     const row = rows[0] || {};
     
     return {
@@ -142,25 +205,69 @@ export async function getOverviewMetrics(): Promise<OverviewMetrics> {
   }
 }
 
-export async function getUsageOverTime(): Promise<UsageDataPoint[]> {
+export async function getUsageOverTime(
+  startDate?: Date | string,
+  endDate?: Date | string,
+  username?: string
+): Promise<UsageDataPoint[]> {
   const query = `
+    WITH pricing AS (
+      SELECT
+        SPLIT(key, ':')[SAFE_OFFSET(1)] AS model,
+        MAX(CASE WHEN ENDS_WITH(key, ':input') THEN CAST(value AS FLOAT64) END) AS input_cost_per_m,
+        MAX(CASE WHEN ENDS_WITH(key, ':output') THEN CAST(value AS FLOAT64) END) AS output_cost_per_m
+      FROM \`${DATASET}.dashboard_settings\`
+      WHERE key LIKE 'pricing:%'
+      GROUP BY 1
+    )
     SELECT 
-      FORMAT_DATE('%Y-%m-%d', day) as day,
-      SUM(total_tokens) as tokens,
-      SUM(request_count) as requests,
-      model
-    FROM \`${DATASET}.usage_summary_daily\`
-    WHERE day >= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)
-    GROUP BY day, model
+      FORMAT_DATE('%Y-%m-%d', u.day) AS day,
+      u.model,
+      COALESCE(SUM(u.total_tokens), 0) AS tokens,
+      COALESCE(SUM(u.request_count), 0) AS requests,
+      COALESCE(SUM(
+        (u.input_tokens / 1000000) * COALESCE(
+          p.input_cost_per_m,
+          CASE 
+            WHEN u.model LIKE '%pro%' THEN 1.25 
+            WHEN u.model LIKE '%flash%' THEN 0.075 
+            ELSE 0.0 
+          END
+        ) + 
+        (u.output_tokens / 1000000) * COALESCE(
+          p.output_cost_per_m,
+          CASE 
+            WHEN u.model LIKE '%pro%' THEN 3.75 
+            WHEN u.model LIKE '%flash%' THEN 0.30 
+            ELSE 0.0 
+          END
+        )
+      ), 0.0) AS cost
+    FROM \`${DATASET}.usage_summary_daily\` u
+    LEFT JOIN pricing p ON u.model = p.model
+    WHERE u.day >= COALESCE(CAST(@startDate AS DATE), DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY))
+      AND u.day <= COALESCE(CAST(@endDate AS DATE), CURRENT_DATE())
+      AND (@username IS NULL OR u.os_username = @username)
+    GROUP BY u.day, u.model
     ORDER BY day ASC
   `;
 
+  const options = {
+    query,
+    params: {
+      startDate: formatDate(startDate),
+      endDate: formatDate(endDate),
+      username: username || null,
+    },
+  };
+
   try {
-    const rows = await bq.query<any>(query);
+    const rows = await bq.query<any>(options);
     return rows.map(r => ({
       day: String(r.day),
       tokens: Number(r.tokens),
       requests: Number(r.requests),
+      cost: Number(r.cost),
       model: String(r.model)
     }));
   } catch (error) {
@@ -169,53 +276,116 @@ export async function getUsageOverTime(): Promise<UsageDataPoint[]> {
   }
 }
 
-export async function getTopUsers(): Promise<UserUsage[]> {
+export async function getTopUsers(
+  startDate?: Date | string,
+  endDate?: Date | string,
+  limit?: number
+): Promise<UserUsage[]> {
   const query = `
-    WITH user_costs AS (
+    WITH pricing AS (
+      SELECT
+        SPLIT(key, ':')[SAFE_OFFSET(1)] AS model,
+        MAX(CASE WHEN ENDS_WITH(key, ':input') THEN CAST(value AS FLOAT64) END) AS input_cost_per_m,
+        MAX(CASE WHEN ENDS_WITH(key, ':output') THEN CAST(value AS FLOAT64) END) AS output_cost_per_m
+      FROM \`${DATASET}.dashboard_settings\`
+      WHERE key LIKE 'pricing:%'
+      GROUP BY 1
+    ),
+    user_aggregated AS (
       SELECT 
-        U.os_username,
-        SUM(U.request_count) as requests,
-        SUM(U.input_tokens) as input_tokens,
-        SUM(U.output_tokens) as output_tokens,
-        SUM(U.total_tokens) as tokens,
-        SUM(
-          CASE 
-            WHEN U.model LIKE '%pro%' THEN (U.input_tokens / 1000000) * 1.25 + (U.output_tokens / 1000000) * 3.75
-            WHEN U.model LIKE '%flash%' THEN (U.input_tokens / 1000000) * 0.075 + (U.output_tokens / 1000000) * 0.3
-            ELSE 0
-          END
-        ) as cost
-      FROM \`${DATASET}.usage_summary_daily\` U
-      WHERE U.day >= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)
-      GROUP BY U.os_username
+        u.os_username,
+        COALESCE(SUM(u.request_count), 0) AS requests,
+        COALESCE(SUM(u.input_tokens), 0) AS input_tokens,
+        COALESCE(SUM(u.output_tokens), 0) AS output_tokens,
+        COALESCE(SUM(u.total_tokens), 0) AS tokens,
+        COALESCE(SUM(
+          (u.input_tokens / 1000000) * COALESCE(
+            p.input_cost_per_m,
+            CASE 
+              WHEN u.model LIKE '%pro%' THEN 1.25 
+              WHEN u.model LIKE '%flash%' THEN 0.075 
+              ELSE 0.0 
+            END
+          ) + 
+          (u.output_tokens / 1000000) * COALESCE(
+            p.output_cost_per_m,
+            CASE 
+              WHEN u.model LIKE '%pro%' THEN 3.75 
+              WHEN u.model LIKE '%flash%' THEN 0.30 
+              ELSE 0.0 
+            END
+          )
+        ), 0.0) AS cost
+      FROM \`${DATASET}.usage_summary_daily\` u
+      LEFT JOIN pricing p ON u.model = p.model
+      WHERE u.day >= COALESCE(CAST(@startDate AS DATE), DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY))
+        AND u.day <= COALESCE(CAST(@endDate AS DATE), CURRENT_DATE())
+      GROUP BY u.os_username
     )
     SELECT 
-      C.os_username,
-      M.display_name as displayName,
-      C.requests,
-      C.input_tokens,
-      C.output_tokens,
-      C.tokens,
-      C.cost
-    FROM user_costs C
-    LEFT JOIN \`${DATASET}.user_mappings\` M ON C.os_username = M.os_username
-    ORDER BY C.tokens DESC
-    LIMIT 10
+      c.os_username,
+      COALESCE(m.display_name, c.os_username) AS displayName,
+      m.email,
+      m.team,
+      c.requests,
+      c.input_tokens,
+      c.output_tokens,
+      c.tokens,
+      c.cost
+    FROM user_aggregated c
+    LEFT JOIN \`${DATASET}.user_mappings\` m ON c.os_username = m.os_username
+    ORDER BY c.tokens DESC
+    LIMIT @limit
   `;
 
+  // We request all records to perform accurate unattributed redistribution
+  const sqlLimit = 1000000;
+  const options = {
+    query,
+    params: {
+      startDate: formatDate(startDate),
+      endDate: formatDate(endDate),
+      limit: sqlLimit,
+    },
+  };
+
   try {
-    const rows = await bq.query<any>(query);
-    return rows.map(r => ({
+    const rows = await bq.query<any>(options);
+    const rawUsers = rows.map(r => ({
       os_username: String(r.os_username),
       displayName: String(r.displayName || r.os_username),
+      email: r.email ? String(r.email) : null,
+      team: r.team ? String(r.team) : null,
       requests: Number(r.requests),
       input_tokens: Number(r.input_tokens),
       output_tokens: Number(r.output_tokens),
       tokens: Number(r.tokens),
-      cost: Number(r.cost || 0)
+      cost: Number(r.cost || 0),
     }));
+
+    const redistributed = redistributeUnattributed(rawUsers);
+
+    if (limit !== undefined) {
+      return redistributed.slice(0, limit);
+    }
+    return redistributed;
   } catch (error) {
     logger.error({ error, operation: 'get_top_users' }, 'Failed to fetch top users');
     return [];
+  }
+}
+
+export async function getUserUsage(
+  username: string,
+  startDate?: Date | string,
+  endDate?: Date | string
+): Promise<UserUsage | null> {
+  try {
+    const allUsers = await getTopUsers(startDate, endDate);
+    const user = allUsers.find(u => u.os_username === username);
+    return user ?? null;
+  } catch (error) {
+    logger.error({ error, username, operation: 'get_user_usage' }, 'Failed to fetch user usage');
+    return null;
   }
 }

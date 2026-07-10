@@ -4,42 +4,59 @@ export const dynamic = 'force-dynamic';
 import React from 'react';
 import { ChartCard } from '@/components/ChartCard';
 import { KpiCard } from '@/components/KpiCard';
-import { getTopUsers, getUsageOverTime } from '@/lib/bigquery';
+import { getUserUsage, getUsageOverTime } from '@/lib/bigquery';
 import { notFound } from 'next/navigation';
 import { UsageChart } from '@/components/UsageChart';
+import { DateFilter } from '@/components/DateFilter';
+import { resolveDateRange } from '@/lib/dateUtils';
 
-export default async function UserDetailPage({ params }: { params: Promise<{ username: string }> }) {
+export default async function UserDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ username: string }>;
+  searchParams: Promise<{ preset?: string; startDate?: string; endDate?: string }>;
+}) {
   const { username } = await params;
-  const allUsers = await getTopUsers();
-  const user = allUsers.find(u => u.os_username === username);
+  const { preset, startDate, endDate } = await searchParams;
+  const { start, end } = resolveDateRange(preset, startDate, endDate);
+
+  // FIX: Use getUserUsage directly instead of filtering getTopUsers
+  // (getTopUsers only returned the top-N users; users outside that list were invisible)
+  const [user, usageData] = await Promise.all([
+    getUserUsage(username, start, end),
+    getUsageOverTime(start, end, username), // FIX: filter chart data by this user
+  ]);
 
   if (!user) {
     notFound();
   }
 
-  const usageData = await getUsageOverTime();
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-      <header style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-        <div style={{ 
-          width: '64px', 
-          height: '64px', 
-          borderRadius: '50%', 
-          backgroundColor: 'var(--md-sys-color-primary-container)',
-          color: 'var(--md-sys-color-on-primary-container)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: '24px',
-          fontWeight: '600'
-        }}>
-          {user.displayName[0]}
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div style={{ 
+            width: '64px', 
+            height: '64px', 
+            borderRadius: '50%', 
+            backgroundColor: 'var(--md-sys-color-primary-container)',
+            color: 'var(--md-sys-color-on-primary-container)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '24px',
+            fontWeight: '600',
+            flexShrink: 0,
+          }}>
+            {user.displayName[0]}
+          </div>
+          <div>
+            <h2 style={{ fontSize: 'var(--md-sys-typescale-headline-medium-size)', fontWeight: '600' }}>{user.displayName}</h2>
+            <p style={{ color: 'var(--md-sys-color-on-surface-variant)' }}>@{user.os_username}</p>
+          </div>
         </div>
-        <div>
-          <h2 style={{ fontSize: 'var(--md-sys-typescale-headline-medium-size)', fontWeight: '600' }}>{user.displayName}</h2>
-          <p style={{ color: 'var(--md-sys-color-on-surface-variant)' }}>@{user.os_username}</p>
-        </div>
+        <DateFilter />
       </header>
 
       <div style={{ 

@@ -303,12 +303,6 @@ export const NavBar: React.FC<NavBarProps> = ({ user }) => {
               <span>Account Settings</span>
             </Link>
 
-            {/* Logout Trigger */}
-            <a href="/_gcp_iap/clear_session" className="action-link" role="menuitem">
-              <span className="icon">logout</span>
-              <span>Log Out</span>
-            </a>
-            
           </div>
         </div>
       </div>

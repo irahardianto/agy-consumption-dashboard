@@ -11,21 +11,33 @@ import {
 } from '@/lib/bigquery';
 import { UsageChart } from '@/components/UsageChart';
 import { UserBarChart } from '@/components/UserBarChart';
+import { DateFilter } from '@/components/DateFilter';
+import { resolveDateRange } from '@/lib/dateUtils';
 
-export default async function OverviewPage() {
+export default async function OverviewPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ preset?: string; startDate?: string; endDate?: string }>;
+}) {
+  const { preset, startDate, endDate } = await searchParams;
+  const { start, end } = resolveDateRange(preset, startDate, endDate);
+
   const [metrics, usageData, topUsers] = await Promise.all([
-    getOverviewMetrics(),
-    getUsageOverTime(),
-    getTopUsers()
+    getOverviewMetrics(start, end),
+    getUsageOverTime(start, end),
+    getTopUsers(start, end),
   ]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-      <header>
-        <h2 style={{ fontSize: 'var(--md-sys-typescale-headline-medium-size)', fontWeight: '600' }}>Overview</h2>
-        <p style={{ color: 'var(--md-sys-color-on-surface-variant)', marginTop: '4px' }}>
-          Tracking AI consumption across your organization (last 30 days).
-        </p>
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
+        <div>
+          <h2 style={{ fontSize: 'var(--md-sys-typescale-headline-medium-size)', fontWeight: '600' }}>Overview</h2>
+          <p style={{ color: 'var(--md-sys-color-on-surface-variant)', marginTop: '4px' }}>
+            Tracking AI consumption across your organization.
+          </p>
+        </div>
+        <DateFilter />
       </header>
 
       {/* KPI Row */}

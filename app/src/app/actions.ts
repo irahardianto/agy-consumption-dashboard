@@ -2,8 +2,15 @@
 
 import { revalidatePath } from 'next/cache';
 import { parse } from 'csv-parse/sync';
-import { updateSetting, replaceUserMappings, type UserMapping } from '@/lib/settings';
+import {
+  updateSetting,
+  replaceUserMappings,
+  updatePricing,
+  resetPricingToDefaults,
+  type UserMapping,
+} from '@/lib/settings';
 import { requireUser } from '@/lib/auth';
+import { type PricingConfig } from '@/lib/cost';
 import logger from '@/lib/logger';
 
 /**
@@ -69,5 +76,97 @@ export async function uploadUserMappings(formData: FormData) {
   } catch (error) {
     logger.error({ error, operation: 'action_upload_mappings' }, 'Failed to upload mappings via action');
     return { success: false, error: error instanceof Error ? error.message : 'Failed to upload mappings' };
+  }
+}
+
+/**
+ * Action to save the updated model pricing configuration.
+ */
+export async function savePricingAction(pricing: PricingConfig) {
+  const correlationId = crypto.randomUUID();
+  const start = Date.now();
+
+  logger.info({
+    operation: 'save_pricing_action',
+    correlationId,
+  }, 'Starting pricing save action');
+
+  try {
+    await requireUser();
+
+    // Input Validation: rates must be non-negative numbers
+    for (const [model, rates] of Object.entries(pricing)) {
+      if (typeof rates.input !== 'number' || rates.input < 0 || isNaN(rates.input)) {
+        throw new Error(`Invalid input rate for ${model}: must be a non-negative number`);
+      }
+      if (typeof rates.output !== 'number' || rates.output < 0 || isNaN(rates.output)) {
+        throw new Error(`Invalid output rate for ${model}: must be a non-negative number`);
+      }
+    }
+
+    await updatePricing(pricing);
+
+    logger.info({
+      operation: 'save_pricing_action',
+      correlationId,
+      durationMs: Date.now() - start,
+    }, 'Pricing saved successfully via action');
+
+    revalidatePath('/settings');
+    return { success: true };
+  } catch (error) {
+    logger.error({
+      operation: 'save_pricing_action',
+      correlationId,
+      durationMs: Date.now() - start,
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    }, 'Pricing save action failed');
+
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to save settings',
+    };
+  }
+}
+
+/**
+ * Action to reset custom model pricing to default standard rates.
+ */
+export async function resetPricingAction() {
+  const correlationId = crypto.randomUUID();
+  const start = Date.now();
+
+  logger.info({
+    operation: 'reset_pricing_action',
+    correlationId,
+  }, 'Starting pricing reset action');
+
+  try {
+    await requireUser();
+
+    await resetPricingToDefaults();
+
+    logger.info({
+      operation: 'reset_pricing_action',
+      correlationId,
+      durationMs: Date.now() - start,
+    }, 'Pricing reset successfully via action');
+
+    revalidatePath('/settings');
+    return { success: true };
+  } catch (error) {
+    logger.error({
+      operation: 'reset_pricing_action',
+      correlationId,
+      durationMs: Date.now() - start,
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    }, 'Pricing reset action failed');
+
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to reset settings',
+    };
   }
 }
