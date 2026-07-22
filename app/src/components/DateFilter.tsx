@@ -28,14 +28,16 @@ const PRESETS: readonly Preset[] = [
   { key: 'custom', label: 'Custom Range' },
 ] as const;
 
-// ─── Internal component (requires Suspense boundary) ──────────────────────
+interface DateFilterProps {
+  defaultPreset?: string | undefined;
+}
 
-function DateFilterInner() {
+function DateFilterInner({ defaultPreset }: DateFilterProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
 
-  const currentPreset = searchParams.get('preset') ?? undefined;
+  const currentPreset = searchParams.get('preset') ?? defaultPreset ?? '3days';
   const currentStartDate = searchParams.get('startDate') ?? undefined;
   const currentEndDate = searchParams.get('endDate') ?? undefined;
 
@@ -245,10 +247,10 @@ function DateFilterInner() {
  * Reads/writes `?preset=` and `?startDate=` / `?endDate=` search params.
  * Must be used inside a Next.js App Router layout that supports Suspense.
  */
-export function DateFilter() {
+export function DateFilter({ defaultPreset }: DateFilterProps) {
   return (
     <Suspense fallback={<div className={styles.filterSkeleton} aria-hidden="true" />}>
-      <DateFilterInner />
+      <DateFilterInner defaultPreset={defaultPreset} />
     </Suspense>
   );
 }

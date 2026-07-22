@@ -7,11 +7,12 @@ interface KpiCardProps {
     value: number;
     isPositive: boolean;
   };
+  trendLabel?: string;
   icon?: string;
   unit?: string;
 }
 
-export const KpiCard: React.FC<KpiCardProps> = ({ label, value, trend, icon, unit }) => {
+export const KpiCard: React.FC<KpiCardProps> = ({ label, value, trend, trendLabel = 'from last month', icon, unit }) => {
   return (
     <div className="card">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
@@ -61,7 +62,7 @@ export const KpiCard: React.FC<KpiCardProps> = ({ label, value, trend, icon, uni
             {trend.isPositive ? 'trending_up' : 'trending_down'}
           </span>
           <span>{trend.isPositive ? '+' : ''}{trend.value}%</span>
-          <span style={{ color: 'var(--md-sys-color-on-surface-variant)', fontWeight: '400' }}>from last month</span>
+          <span style={{ color: 'var(--md-sys-color-on-surface-variant)', fontWeight: '400' }}>{trendLabel}</span>
         </div>
       )}
     </div>

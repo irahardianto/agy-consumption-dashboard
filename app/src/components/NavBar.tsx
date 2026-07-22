@@ -10,7 +10,7 @@ export interface NavBarProps {
   user?: { email: string; id: string } | null;
 }
 
-export const NavBar: React.FC<NavBarProps> = () => {
+export const NavBar: React.FC<NavBarProps> = ({ user }) => {
   const pathname = usePathname();
   const [isDarkMode, setIsDarkMode] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -102,8 +102,13 @@ export const NavBar: React.FC<NavBarProps> = () => {
         })}
       </div>
 
-      {/* Right side: theme toggle only. No user identity — auth is handled at IAP level. */}
-      <div ref={containerRef}>
+      {/* Right side: theme toggle and user email */}
+      <div ref={containerRef} style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        {user?.email && (
+          <span style={{ fontSize: '14px', color: 'var(--md-sys-color-on-surface-variant)', fontWeight: '500' }}>
+            {user.email}
+          </span>
+        )}
         <button
           id="theme-toggle-btn"
           aria-label={isDarkMode ? 'Switch to light theme' : 'Switch to dark theme'}

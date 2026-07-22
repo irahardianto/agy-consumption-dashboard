@@ -5,10 +5,14 @@ import React from 'react';
 import { ChartCard } from '@/components/ChartCard';
 import { KpiCard } from '@/components/KpiCard';
 import { getUserUsage, getUsageOverTime } from '@/lib/bigquery';
+import { getUserSessions } from '@/app/db';
 import { notFound } from 'next/navigation';
 import { UsageChart } from '@/components/UsageChart';
+import { DonutChart } from '@/components/DonutChart';
 import { DateFilter } from '@/components/DateFilter';
 import { resolveDateRange } from '@/lib/dateUtils';
+import { sanitizeDateParams } from '@/app/dateSanitizer';
+import { UserSessionBreakdown } from '@/components/UserSessionBreakdown';
 
 export default async function UserDetailPage({
   params,
@@ -19,18 +23,35 @@ export default async function UserDetailPage({
 }) {
   const { username } = await params;
   const { preset, startDate, endDate } = await searchParams;
-  const { start, end } = resolveDateRange(preset, startDate, endDate);
+  const safeParams = sanitizeDateParams(preset, startDate, endDate);
+  const { start, end } = resolveDateRange(safeParams.preset, safeParams.startDate, safeParams.endDate);
 
-  // FIX: Use getUserUsage directly instead of filtering getTopUsers
-  // (getTopUsers only returned the top-N users; users outside that list were invisible)
-  const [user, usageData] = await Promise.all([
+  // Format dates for BigQuery
+  if (!start || !end) {
+    throw new Error('Invalid date range');
+  }
+  const startStr = start;
+  const endStr = end;
+
+  const [user, usageData, sessions] = await Promise.all([
     getUserUsage(username, start, end),
-    getUsageOverTime(start, end, username), // FIX: filter chart data by this user
+    getUsageOverTime(start, end, username),
+    getUserSessions(username, startStr, endStr),
   ]);
 
   if (!user) {
     notFound();
   }
+
+  // Aggregate model usage from usageData
+  const modelUsageMap = usageData.reduce((acc, curr) => {
+    acc[curr.model] = (acc[curr.model] || 0) + curr.tokens;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const modelUsageData = Object.entries(modelUsageMap)
+    .map(([label, value]) => ({ label, value }))
+    .sort((a, b) => b.value - a.value);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
@@ -69,8 +90,18 @@ export default async function UserDetailPage({
         <KpiCard label="Total Cost" value={`$${user.cost.toFixed(2)}`} icon="payments" />
       </div>
 
-      <ChartCard title="Usage Trend" subtitle="Daily token consumption for this user">
-        <UsageChart data={usageData} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 480px), 1fr))', gap: '24px' }}>
+        <ChartCard title="Usage Trend" subtitle="Daily token consumption for this user">
+          <UsageChart data={usageData} />
+        </ChartCard>
+
+        <ChartCard title="Model Usage" subtitle="Token consumption by model">
+          <DonutChart data={modelUsageData} />
+        </ChartCard>
+      </div>
+
+      <ChartCard title="Session Breakdown" subtitle="Detailed breakdown of recent sessions">
+        <UserSessionBreakdown sessions={sessions} />
       </ChartCard>
     </div>
   );

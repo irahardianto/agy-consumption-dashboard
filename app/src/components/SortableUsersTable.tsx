@@ -2,13 +2,14 @@
 
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
-import type { UserUsage } from '@/lib/bigquery';
+import type { UserUsageWithDetails } from '@/app/db';
+import { Sparkline } from '@/components/Sparkline';
 
-type SortKey = 'displayName' | 'requests' | 'tokens' | 'cost';
+type SortKey = 'displayName' | 'requests' | 'tokens' | 'input_tokens' | 'output_tokens' | 'thinking_tokens' | 'cost' | 'last_active';
 type SortDir = 'asc' | 'desc';
 
 interface SortableUsersTableProps {
-  data: UserUsage[];
+  data: UserUsageWithDetails[];
 }
 
 function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
@@ -29,10 +30,6 @@ function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
   );
 }
 
-/**
- * Client-side sortable table for the User Breakdown page.
- * Columns: User, Requests, Tokens, Cost — all sortable.
- */
 export function SortableUsersTable({ data }: SortableUsersTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>('tokens');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
@@ -59,8 +56,20 @@ export function SortableUsersTable({ data }: SortableUsersTableProps) {
         case 'tokens':
           cmp = a.tokens - b.tokens;
           break;
+        case 'input_tokens':
+          cmp = a.input_tokens - b.input_tokens;
+          break;
+        case 'output_tokens':
+          cmp = a.output_tokens - b.output_tokens;
+          break;
+        case 'thinking_tokens':
+          cmp = a.thinking_tokens - b.thinking_tokens;
+          break;
         case 'cost':
           cmp = a.cost - b.cost;
+          break;
+        case 'last_active':
+          cmp = (a.last_active || '').localeCompare(b.last_active || '');
           break;
       }
       return sortDir === 'asc' ? cmp : -cmp;
@@ -68,21 +77,23 @@ export function SortableUsersTable({ data }: SortableUsersTableProps) {
   }, [data, sortKey, sortDir]);
 
   const thStyle = (key: SortKey): React.CSSProperties => ({
-    padding: '16px',
-    fontSize: 'var(--md-sys-typescale-label-medium-size)',
+    padding: '12px 16px',
+    fontSize: '13px',
     fontWeight: '600',
     color: sortKey === key ? 'var(--md-sys-color-primary)' : 'var(--md-sys-color-on-surface-variant)',
     cursor: 'pointer',
     userSelect: 'none',
     whiteSpace: 'nowrap',
     transition: 'color 0.15s ease',
+    verticalAlign: 'bottom',
   });
 
   const tdStyle: React.CSSProperties = {
-    padding: '16px',
-    fontSize: '14px',
+    padding: '12px 16px',
+    fontSize: '13px',
     color: 'var(--md-sys-color-on-surface)',
     borderBottom: '1px solid var(--md-sys-color-outline-variant)',
+    verticalAlign: 'middle',
   };
 
   return (
@@ -105,51 +116,62 @@ export function SortableUsersTable({ data }: SortableUsersTableProps) {
             <th
               style={{ ...thStyle('displayName'), textAlign: 'left' }}
               onClick={() => handleSort('displayName')}
-              aria-sort={sortKey === 'displayName' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
             >
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                User
-                <SortIcon active={sortKey === 'displayName'} dir={sortDir} />
-              </span>
+              User <SortIcon active={sortKey === 'displayName'} dir={sortDir} />
             </th>
             <th
               style={{ ...thStyle('requests'), textAlign: 'right' }}
               onClick={() => handleSort('requests')}
-              aria-sort={sortKey === 'requests' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
             >
-              <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
-                Requests
-                <SortIcon active={sortKey === 'requests'} dir={sortDir} />
-              </span>
+              Reqs <SortIcon active={sortKey === 'requests'} dir={sortDir} />
+            </th>
+            <th
+              style={{ ...thStyle('input_tokens'), textAlign: 'right' }}
+              onClick={() => handleSort('input_tokens')}
+            >
+              In Tokens <SortIcon active={sortKey === 'input_tokens'} dir={sortDir} />
+            </th>
+            <th
+              style={{ ...thStyle('output_tokens'), textAlign: 'right' }}
+              onClick={() => handleSort('output_tokens')}
+            >
+              Out Tokens <SortIcon active={sortKey === 'output_tokens'} dir={sortDir} />
+            </th>
+            <th
+              style={{ ...thStyle('thinking_tokens'), textAlign: 'right' }}
+              onClick={() => handleSort('thinking_tokens')}
+            >
+              Think Tokens <SortIcon active={sortKey === 'thinking_tokens'} dir={sortDir} />
             </th>
             <th
               style={{ ...thStyle('tokens'), textAlign: 'right' }}
               onClick={() => handleSort('tokens')}
-              aria-sort={sortKey === 'tokens' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
             >
-              <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
-                Tokens
-                <SortIcon active={sortKey === 'tokens'} dir={sortDir} />
-              </span>
+              Total Tokens <SortIcon active={sortKey === 'tokens'} dir={sortDir} />
             </th>
             <th
               style={{ ...thStyle('cost'), textAlign: 'right' }}
               onClick={() => handleSort('cost')}
-              aria-sort={sortKey === 'cost' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
             >
-              <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
-                Cost
-                <SortIcon active={sortKey === 'cost'} dir={sortDir} />
-              </span>
+              Cost <SortIcon active={sortKey === 'cost'} dir={sortDir} />
             </th>
-            <th style={{ padding: '16px', width: '80px' }} />
+            <th
+              style={{ ...thStyle('last_active'), textAlign: 'right' }}
+              onClick={() => handleSort('last_active')}
+            >
+              Last Active <SortIcon active={sortKey === 'last_active'} dir={sortDir} />
+            </th>
+            <th style={{ padding: '12px 16px', fontSize: '13px', fontWeight: '600', color: 'var(--md-sys-color-on-surface-variant)', textAlign: 'center' }}>
+              Trend
+            </th>
+            <th style={{ padding: '12px 16px', width: '80px' }} />
           </tr>
         </thead>
         <tbody>
           {sorted.length === 0 ? (
             <tr>
               <td
-                colSpan={5}
+                colSpan={10}
                 style={{
                   ...tdStyle,
                   textAlign: 'center',
@@ -188,10 +210,25 @@ export function SortableUsersTable({ data }: SortableUsersTableProps) {
                   {user.requests.toLocaleString()}
                 </td>
                 <td style={{ ...tdStyle, textAlign: 'right' }}>
+                  {(user.input_tokens / 1_000_000).toFixed(2)}M
+                </td>
+                <td style={{ ...tdStyle, textAlign: 'right' }}>
+                  {(user.output_tokens / 1_000_000).toFixed(2)}M
+                </td>
+                <td style={{ ...tdStyle, textAlign: 'right' }}>
+                  {(user.thinking_tokens / 1_000_000).toFixed(2)}M
+                </td>
+                <td style={{ ...tdStyle, textAlign: 'right' }}>
                   {(user.tokens / 1_000_000).toFixed(2)}M
                 </td>
                 <td style={{ ...tdStyle, textAlign: 'right' }}>
                   ${user.cost.toFixed(3)}
+                </td>
+                <td style={{ ...tdStyle, textAlign: 'right' }}>
+                  {user.last_active || 'N/A'}
+                </td>
+                <td style={{ ...tdStyle, textAlign: 'center' }}>
+                  <Sparkline data={user.sparkline || []} />
                 </td>
                 <td style={{ ...tdStyle, textAlign: 'right' }}>
                   <Link

@@ -4,6 +4,28 @@
 :root {
   color-scheme: light dark;
 
+  /* Chart Colors (Categorical) */
+  --chart-color-1: light-dark(#6366F1, #818CF8);
+  --chart-color-2: light-dark(#EC4899, #F472B6);
+  --chart-color-3: light-dark(#14B8A6, #2DD4BF);
+  --chart-color-4: light-dark(#F59E0B, #FBBF24);
+  --chart-color-5: light-dark(#8B5CF6, #A78BFA);
+
+  /* Heatmap Specific Tokens */
+  --heatmap-empty: light-dark(#F3F4F6, #1F2937);
+  --heatmap-low: light-dark(#E0E7FF, #3730A3);
+  --heatmap-med: light-dark(#818CF8, #4F46E5);
+  --heatmap-high: light-dark(#4F46E5, #312E81);
+  --heatmap-max: light-dark(#312E81, #1E1B4B);
+
+  /* Table & Upload UI */
+  --table-header-bg: var(--md-sys-color-surface-container-low);
+  --table-border: var(--md-sys-color-outline-variant);
+  --upload-zone-border: var(--md-sys-color-outline);
+  --upload-zone-bg: var(--md-sys-color-surface);
+  --upload-zone-bg-hover: var(--md-sys-color-surface-container-lowest);
+  --upload-zone-bg-active: var(--md-sys-color-surface-container);
+
   /* MD3 Color Palette - Indigo/Violet Theme */
   --md-sys-color-primary: light-dark(#6750A4, #D0BCFF);
   --md-sys-color-on-primary: light-dark(#FFFFFF, #381E72);
@@ -44,6 +66,13 @@
   --md-sys-color-surface-container-highest: light-dark(#E6E0E9, #36343B);
 
   /* Typography */
+  --md-sys-typescale-data-large-font: 'Outfit', sans-serif;
+  --md-sys-typescale-data-large-weight: 600;
+  --md-sys-typescale-data-large-size: 32px;
+  
+  --md-sys-typescale-table-header-font: 'Inter', sans-serif;
+  --md-sys-typescale-table-header-weight: 600;
+  --md-sys-typescale-table-header-size: 14px;
   --md-sys-typescale-display-large-font: 'Outfit', sans-serif;
   --md-sys-typescale-display-large-weight: 400;
   --md-sys-typescale-display-large-size: 57px;
@@ -609,5 +638,27 @@ button {
     border-radius: 28px 28px 0 0;
     box-shadow: 0px -4px 16px rgba(0, 0, 0, 0.15);
     animation: bottomSheetSlideUp 200ms var(--standard-easing) forwards;
+  }
+}
+
+/* Animation Specifications */
+@keyframes donut-hover {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.05);
+  }
+}
+
+@keyframes dropzone-pulse {
+  0% {
+    background-color: var(--upload-zone-bg-active);
+  }
+  50% {
+    background-color: var(--upload-zone-bg-hover);
+  }
+  100% {
+    background-color: var(--upload-zone-bg-active);
   }
 }

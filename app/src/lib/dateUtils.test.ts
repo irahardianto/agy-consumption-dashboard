@@ -16,16 +16,16 @@ const todayStr = localDateString(0);
 describe('resolveDateRange', () => {
   // ── No-arg / default / show-all ───────────────────────────────────────────
 
-  it('returns undefined,undefined when called with no args', () => {
+  it('returns last 3 days when called with no args', () => {
     const result = resolveDateRange();
-    expect(result.start).toBeUndefined();
-    expect(result.end).toBeUndefined();
+    expect(result.start).toBe(localDateString(-3));
+    expect(result.end).toBe(todayStr);
   });
 
-  it('returns undefined,undefined for unrecognized preset', () => {
+  it('returns last 3 days for unrecognized preset', () => {
     const result = resolveDateRange('unknown-preset');
-    expect(result.start).toBeUndefined();
-    expect(result.end).toBeUndefined();
+    expect(result.start).toBe(localDateString(-3));
+    expect(result.end).toBe(todayStr);
   });
 
   // ── Preset: today ─────────────────────────────────────────────────────────
@@ -90,12 +90,12 @@ describe('resolveDateRange', () => {
 describe('buildRangeLabel', () => {
   // ── Default label (no preset) ─────────────────────────────────────────────
 
-  it('returns "Last 30 Days" when called with no args', () => {
-    expect(buildRangeLabel()).toBe('Last 30 Days');
+  it('returns "Last 3 Days" when called with no args', () => {
+    expect(buildRangeLabel()).toBe('Last 3 Days');
   });
 
-  it('returns "Last 30 Days" for unrecognized preset', () => {
-    expect(buildRangeLabel('unknown')).toBe('Last 30 Days');
+  it('returns "Last 3 Days" for unrecognized preset', () => {
+    expect(buildRangeLabel('unknown')).toBe('Last 3 Days');
   });
 
   // ── Preset labels ─────────────────────────────────────────────────────────

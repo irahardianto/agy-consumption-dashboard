@@ -2,10 +2,11 @@
 export const dynamic = 'force-dynamic';
 
 import React from 'react';
-import { getTopUsers } from '@/lib/bigquery';
 import { DateFilter } from '@/components/DateFilter';
 import { resolveDateRange } from '@/lib/dateUtils';
+import { sanitizeDateParams } from '@/app/dateSanitizer';
 import { SortableUsersTable } from '@/components/SortableUsersTable';
+import { getUsersWithDetails } from '@/app/db';
 
 export default async function UsersPage({
   searchParams,
@@ -13,9 +14,17 @@ export default async function UsersPage({
   searchParams: Promise<{ preset?: string; startDate?: string; endDate?: string }>;
 }) {
   const { preset, startDate, endDate } = await searchParams;
-  const { start, end } = resolveDateRange(preset, startDate, endDate);
+  const safeParams = sanitizeDateParams(preset, startDate, endDate);
+  const { start, end } = resolveDateRange(safeParams.preset, safeParams.startDate, safeParams.endDate);
+  
+  // Format dates for BigQuery
+  if (!start || !end) {
+    throw new Error('Invalid date range');
+  }
+  const startStr = start;
+  const endStr = end;
 
-  const users = await getTopUsers(start, end);
+  const users = await getUsersWithDetails(startStr, endStr);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>

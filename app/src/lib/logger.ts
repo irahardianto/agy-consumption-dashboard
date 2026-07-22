@@ -7,6 +7,6 @@ const logger = pino({
     service: 'agy-consumption-dashboard',
     projectId: process.env.PROJECT_ID || 'irahardianto-labs',
   },
-}, pino.destination({ dest: 1, sync: true }));
+}, typeof window === 'undefined' && typeof pino.destination === 'function' ? pino.destination({ dest: 1, sync: true }) : undefined);
 
 export default logger;
