@@ -31,7 +31,7 @@ describe('calculateCost', () => {
         output: 5.0,
       },
     };
-    const cost = calculateCost('gemini-1.5-pro', 1_000_000, 1_000_000, customPricing);
+    const cost = calculateCost('gemini-1.5-pro', 1_000_000, 1_000_000, 0, customPricing);
     expect(cost).toBe(7.0);
   });
 });
@@ -171,6 +171,57 @@ describe('redistributeUnattributed', () => {
     const redistributed = redistributeUnattributed(records);
     expect(redistributed.length).toBe(1);
     expect(redistributed[0]?.tokens).toBe(0);
+  });
+
+  it('redistributes tokens and cost proportionally to requests when totalAttributedTokens is 0 but totalAttributedRequests > 0', () => {
+    const records: UsageRecord[] = [
+      {
+        os_username: 'user1',
+        displayName: 'User One',
+        requests: 10,
+        input_tokens: 0,
+        output_tokens: 0,
+        tokens: 0,
+        cost: 0,
+      },
+      {
+        os_username: 'user2',
+        displayName: 'User Two',
+        requests: 30,
+        input_tokens: 0,
+        output_tokens: 0,
+        tokens: 0,
+        cost: 0,
+      },
+      {
+        os_username: '__unattributed__',
+        displayName: 'Unattributed',
+        requests: 100,
+        input_tokens: 1000,
+        output_tokens: 2000,
+        tokens: 3000,
+        cost: 3.0,
+      },
+    ];
+    const redistributed = redistributeUnattributed(records);
+    expect(redistributed.length).toBe(2);
+
+    const u1 = redistributed.find(r => r.os_username === 'user1')!;
+    const u2 = redistributed.find(r => r.os_username === 'user2')!;
+
+    // user1 has 10 / 40 = 25% of requests
+    // user2 has 30 / 40 = 75% of requests
+    expect(u1.tokens).toBe(0.25 * 3000);
+    expect(u1.input_tokens).toBe(0.25 * 1000);
+    expect(u1.output_tokens).toBe(0.25 * 2000);
+    expect(u1.requests).toBe(10 + 0.25 * 100);
+    expect(u1.cost).toBeCloseTo(0.25 * 3.0, 5);
+
+    expect(u2.tokens).toBe(0.75 * 3000);
+    expect(u2.input_tokens).toBe(0.75 * 1000);
+    expect(u2.output_tokens).toBe(0.75 * 2000);
+    expect(u2.requests).toBe(30 + 0.75 * 100);
+    expect(u2.cost).toBeCloseTo(0.75 * 3.0, 5);
   });
 });
 

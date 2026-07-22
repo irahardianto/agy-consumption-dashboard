@@ -72,6 +72,7 @@ export function calculateCost(
   model: string,
   inputTokens: number,
   outputTokens: number,
+  thinkingTokens: number = 0,
   pricing: PricingConfig = {}
 ): number {
   let modelKey = Object.keys(pricing).find(k => model.includes(k));
@@ -88,7 +89,7 @@ export function calculateCost(
   }
 
   const inputCost = (inputTokens / 1_000_000) * rates.input;
-  const outputCost = (outputTokens / 1_000_000) * rates.output;
+  const outputCost = ((outputTokens + thinkingTokens) / 1_000_000) * rates.output;
   
   return inputCost + outputCost;
 }
@@ -124,13 +125,13 @@ export function redistributeUnattributed<T extends UsageRecord>(records: T[]): T
   const totalAttributedTokens = attributedRecords.reduce((sum, r) => sum + r.tokens, 0);
   const totalAttributedRequests = attributedRecords.reduce((sum, r) => sum + r.requests, 0);
 
-  if (totalAttributedTokens === 0 || totalAttributedRequests === 0) {
+  if (totalAttributedTokens === 0 && totalAttributedRequests === 0) {
     return attributedRecords;
   }
 
   return attributedRecords.map(user => {
-    const p_tokens = user.tokens / totalAttributedTokens;
-    const p_requests = user.requests / totalAttributedRequests;
+    const p_requests = totalAttributedRequests > 0 ? user.requests / totalAttributedRequests : 0;
+    const p_tokens = totalAttributedTokens > 0 ? user.tokens / totalAttributedTokens : p_requests;
 
     return {
       ...user,
