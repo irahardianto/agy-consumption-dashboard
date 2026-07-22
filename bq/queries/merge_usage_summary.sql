@@ -13,6 +13,19 @@ USING (
     -- Filter for the last few hours to keep it efficient and handle late-arriving data
     WHERE logging_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 3 HOUR)
   ),
+  active_trajectories AS (
+    SELECT DISTINCT trajectory_id
+    FROM raw_data
+    WHERE trajectory_id IS NOT NULL AND trajectory_id != ''
+  ),
+  user_sessions_raw AS (
+    SELECT
+      JSON_EXTRACT_SCALAR(full_request, '$.labels.trajectory_id') AS trajectory_id,
+      JSON_EXTRACT_SCALAR(full_request, '$.contents[0].parts[0].text') AS first_part_text
+    FROM `${project_id}.${dataset_id}.request_response_logs`
+    WHERE logging_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 14 DAY)
+      AND JSON_EXTRACT_SCALAR(full_request, '$.labels.trajectory_id') IN (SELECT trajectory_id FROM active_trajectories)
+  ),
   user_sessions AS (
     -- Step 1: Extract user from calls that have <user_information> block in the prompt
     SELECT DISTINCT
@@ -20,14 +33,14 @@ USING (
       COALESCE(
         REGEXP_EXTRACT(first_part_text, r'/Users/([^/]+)/'),
         REGEXP_EXTRACT(first_part_text, r'/home/([^/]+)/'),
-        REGEXP_EXTRACT(first_part_text, r'C:\\\\Users\\\\([^\\\\]+)\\\\')
+        REGEXP_EXTRACT(first_part_text, r'C:\\Users\\([^\\/]+)')
       ) AS os_username
-    FROM raw_data
-    WHERE trajectory_id IS NOT NULL
+    FROM user_sessions_raw
+    WHERE trajectory_id IS NOT NULL AND trajectory_id != ''
       AND (
         REGEXP_CONTAINS(first_part_text, r'/Users/([^/]+)/') OR
         REGEXP_CONTAINS(first_part_text, r'/home/([^/]+)/') OR
-        REGEXP_CONTAINS(first_part_text, r'C:\\\\Users\\\\([^\\\\]+)\\\\')
+        REGEXP_CONTAINS(first_part_text, r'C:\\Users\\([^\\/]+)')
       )
   ),
   attributed AS (
@@ -39,7 +52,7 @@ USING (
         COALESCE(
           REGEXP_EXTRACT(r.first_part_text, r'/Users/([^/]+)/'),
           REGEXP_EXTRACT(r.first_part_text, r'/home/([^/]+)/'),
-          REGEXP_EXTRACT(r.first_part_text, r'C:\\\\Users\\\\([^\\\\]+)\\\\')
+          REGEXP_EXTRACT(r.first_part_text, r'C:\\Users\\([^\\/]+)')
         ),
         -- Or from parent session via trajectory_id
         su.os_username,
@@ -53,7 +66,7 @@ USING (
       CAST(JSON_EXTRACT_SCALAR(r.full_response, '$.usageMetadata.totalTokenCount') AS INT64) AS total_tokens,
       CAST(JSON_EXTRACT_SCALAR(r.metadata, '$.request_latency') AS FLOAT64) AS latency_ms
     FROM raw_data r
-    LEFT JOIN user_sessions su ON r.trajectory_id = su.trajectory_id
+    LEFT JOIN user_sessions su ON r.trajectory_id = su.trajectory_id AND r.trajectory_id IS NOT NULL AND r.trajectory_id != ''
   )
   -- Step 3: Aggregate
   SELECT
