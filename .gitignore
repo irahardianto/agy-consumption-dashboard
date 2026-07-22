@@ -48,3 +48,4 @@ terraform/
 docs/
 .agents/
 skills-lock.json
+*.tfvars

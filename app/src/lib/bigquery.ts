@@ -161,14 +161,16 @@ export async function getOverviewMetrics(
         (u.input_tokens / 1000000) * COALESCE(
           p.input_cost_per_m,
           CASE 
+            WHEN u.model LIKE '%2.0-flash-exp%' THEN 0.0 
             WHEN u.model LIKE '%pro%' THEN 1.25 
             WHEN u.model LIKE '%flash%' THEN 0.075 
             ELSE 0.0 
           END
         ) + 
-        (u.output_tokens / 1000000) * COALESCE(
+        ((u.output_tokens + COALESCE(u.thinking_tokens, 0)) / 1000000) * COALESCE(
           p.output_cost_per_m,
           CASE 
+            WHEN u.model LIKE '%2.0-flash-exp%' THEN 0.0 
             WHEN u.model LIKE '%pro%' THEN 3.75 
             WHEN u.model LIKE '%flash%' THEN 0.30 
             ELSE 0.0 
@@ -229,14 +231,16 @@ export async function getUsageOverTime(
         (u.input_tokens / 1000000) * COALESCE(
           p.input_cost_per_m,
           CASE 
+            WHEN u.model LIKE '%2.0-flash-exp%' THEN 0.0 
             WHEN u.model LIKE '%pro%' THEN 1.25 
             WHEN u.model LIKE '%flash%' THEN 0.075 
             ELSE 0.0 
           END
         ) + 
-        (u.output_tokens / 1000000) * COALESCE(
+        ((u.output_tokens + COALESCE(u.thinking_tokens, 0)) / 1000000) * COALESCE(
           p.output_cost_per_m,
           CASE 
+            WHEN u.model LIKE '%2.0-flash-exp%' THEN 0.0 
             WHEN u.model LIKE '%pro%' THEN 3.75 
             WHEN u.model LIKE '%flash%' THEN 0.30 
             ELSE 0.0 
@@ -302,14 +306,16 @@ export async function getTopUsers(
           (u.input_tokens / 1000000) * COALESCE(
             p.input_cost_per_m,
             CASE 
+              WHEN u.model LIKE '%2.0-flash-exp%' THEN 0.0 
               WHEN u.model LIKE '%pro%' THEN 1.25 
               WHEN u.model LIKE '%flash%' THEN 0.075 
               ELSE 0.0 
             END
           ) + 
-          (u.output_tokens / 1000000) * COALESCE(
+          ((u.output_tokens + COALESCE(u.thinking_tokens, 0)) / 1000000) * COALESCE(
             p.output_cost_per_m,
             CASE 
+              WHEN u.model LIKE '%2.0-flash-exp%' THEN 0.0 
               WHEN u.model LIKE '%pro%' THEN 3.75 
               WHEN u.model LIKE '%flash%' THEN 0.30 
               ELSE 0.0 
@@ -380,82 +386,7 @@ export async function getUserUsage(
   startDate?: Date | string,
   endDate?: Date | string
 ): Promise<UserUsage | null> {
-  // Direct per-user query — avoids the redistribution and limit of getTopUsers
-  // which could cause real users to appear as "not found"
-  const query = `
-    WITH pricing AS (
-      SELECT
-        SPLIT(key, ':')[SAFE_OFFSET(1)] AS model,
-        MAX(CASE WHEN ENDS_WITH(key, ':input') THEN CAST(value AS FLOAT64) END) AS input_cost_per_m,
-        MAX(CASE WHEN ENDS_WITH(key, ':output') THEN CAST(value AS FLOAT64) END) AS output_cost_per_m
-      FROM \`${DATASET}.dashboard_settings\`
-      WHERE key LIKE 'pricing:%'
-      GROUP BY 1
-    )
-    SELECT
-      u.os_username,
-      COALESCE(m.display_name, u.os_username) AS displayName,
-      m.email,
-      m.team,
-      COALESCE(SUM(u.request_count), 0) AS requests,
-      COALESCE(SUM(u.input_tokens), 0) AS input_tokens,
-      COALESCE(SUM(u.output_tokens), 0) AS output_tokens,
-      COALESCE(SUM(u.total_tokens), 0) AS tokens,
-      COALESCE(SUM(
-        (u.input_tokens / 1000000) * COALESCE(
-          p.input_cost_per_m,
-          CASE
-            WHEN u.model LIKE '%pro%' THEN 1.25
-            WHEN u.model LIKE '%flash%' THEN 0.075
-            ELSE 0.0
-          END
-        ) +
-        (u.output_tokens / 1000000) * COALESCE(
-          p.output_cost_per_m,
-          CASE
-            WHEN u.model LIKE '%pro%' THEN 3.75
-            WHEN u.model LIKE '%flash%' THEN 0.30
-            ELSE 0.0
-          END
-        )
-      ), 0.0) AS cost
-    FROM \`${DATASET}.usage_summary_daily\` u
-    LEFT JOIN pricing p ON u.model = p.model
-    LEFT JOIN \`${DATASET}.user_mappings\` m ON u.os_username = m.os_username
-    WHERE u.os_username = @username
-      AND u.day >= COALESCE(CAST(@startDate AS DATE), DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY))
-      AND u.day <= COALESCE(CAST(@endDate AS DATE), CURRENT_DATE())
-    GROUP BY u.os_username, m.display_name, m.email, m.team
-  `;
-
-  const options = {
-    query,
-    params: {
-      username,
-      startDate: formatDate(startDate),
-      endDate: formatDate(endDate),
-    },
-  };
-
-  try {
-    const rows = await bq.query<any>(options);
-    if (rows.length === 0) return null;
-
-    const r = rows[0];
-    return {
-      os_username: String(r.os_username),
-      displayName: String(r.displayName || r.os_username),
-      email: r.email ? String(r.email) : null,
-      team: r.team ? String(r.team) : null,
-      requests: Number(r.requests),
-      input_tokens: Number(r.input_tokens),
-      output_tokens: Number(r.output_tokens),
-      tokens: Number(r.tokens),
-      cost: Number(r.cost || 0),
-    };
-  } catch (error) {
-    logger.error({ error, username, operation: 'get_user_usage' }, 'Failed to fetch user usage');
-    return null;
-  }
+  const allUsers = await getTopUsers(startDate, endDate);
+  return allUsers.find(u => u.os_username === username) || null;
 }
 

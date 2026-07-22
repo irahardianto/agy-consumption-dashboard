@@ -77,22 +77,40 @@ export async function updateSetting(key: string, value: string): Promise<void> {
  * Replace all user mappings (used for CSV upload).
  */
 export async function replaceUserMappings(mappings: UserMapping[]): Promise<void> {
-  const dataset = bq.getClient().dataset(DATASET);
-  const table = dataset.table(MAPPINGS_TABLE);
-
   try {
     // Delete all existing mappings first
     await bq.query(`DELETE FROM \`${DATASET}.${MAPPINGS_TABLE}\` WHERE TRUE`);
     
     if (mappings.length > 0) {
-      // Insert new mappings
-      await table.insert(mappings);
+      // Insert new mappings using DML to ensure immediate read-after-write consistency
+      const insertQuery = `
+        INSERT INTO \`${DATASET}.${MAPPINGS_TABLE}\` (os_username, display_name, email, team)
+        SELECT os_username, display_name, email, team FROM UNNEST(@mappings)
+      `;
+      await bq.query({
+        query: insertQuery,
+        params: { mappings },
+      });
     }
     
     logger.info({ count: mappings.length, operation: 'replace_user_mappings' }, 'User mappings replaced successfully');
   } catch (error) {
     logger.error({ error, operation: 'replace_user_mappings' }, 'Failed to replace user mappings');
     throw error;
+  }
+}
+
+/**
+ * Fetch all user mappings.
+ */
+export async function getUserMappings(): Promise<UserMapping[]> {
+  const query = `SELECT os_username, display_name, email, team FROM \`${DATASET}.${MAPPINGS_TABLE}\``;
+  try {
+    const rows = await bq.query<UserMapping>(query);
+    return rows;
+  } catch (error) {
+    logger.error({ error, operation: 'get_user_mappings' }, 'Failed to fetch user mappings');
+    return [];
   }
 }
 

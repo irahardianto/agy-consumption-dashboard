@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { z } from 'zod';
 
 import {
   updateSetting,
@@ -20,7 +21,14 @@ export async function updateDashboardSetting(key: string, value: string) {
   try {
     await requireUser();
     
-    await updateSetting(key, value);
+    const UpdateDashboardSettingSchema = z.object({
+      key: z.string().min(1, "Key is required"),
+      value: z.string()
+    });
+
+    const parsed = UpdateDashboardSettingSchema.parse({ key, value });
+    
+    await updateSetting(parsed.key, parsed.value);
     
     revalidatePath('/settings');
     return { success: true };
@@ -52,23 +60,23 @@ export async function uploadUserMappings(formData: FormData) {
     });
 
     // Validate and transform records
-    const mappings: UserMapping[] = records.map((record: any) => ({
+    const rawMappings = records.map((record: any) => ({
       os_username: String(record.os_username || ''),
       display_name: record.display_name ? String(record.display_name) : null,
       email: record.email ? String(record.email) : null,
       team: record.team ? String(record.team) : null,
     }));
 
-    if (mappings.length === 0) {
-      return { success: false, error: 'CSV file is empty or invalid' };
-    }
+    const UserMappingCsvRowSchema = z.object({
+      os_username: z.string().min(1, "os_username is required"),
+      display_name: z.string().nullable().optional(),
+      email: z.string().email("Invalid email format").nullable().optional().or(z.literal('')),
+      team: z.string().nullable().optional()
+    });
+    
+    const UserMappingsUploadSchema = z.array(UserMappingCsvRowSchema).min(1, "CSV file is empty or invalid");
 
-    // Validate os_username presence
-    for (const mapping of mappings) {
-      if (!mapping.os_username) {
-        return { success: false, error: 'All records must have an os_username' };
-      }
-    }
+    const mappings = UserMappingsUploadSchema.parse(rawMappings);
 
     await replaceUserMappings(mappings);
     
@@ -77,6 +85,34 @@ export async function uploadUserMappings(formData: FormData) {
   } catch (error) {
     logger.error({ error, operation: 'action_upload_mappings' }, 'Failed to upload mappings via action');
     return { success: false, error: error instanceof Error ? error.message : 'Failed to upload mappings' };
+  }
+}
+
+/**
+ * Action to save user mappings from the UI table.
+ */
+export async function saveUserMappingsAction(mappings: UserMapping[]) {
+  try {
+    await requireUser();
+
+    const UserMappingSchema = z.object({
+      os_username: z.string().min(1, "os_username is required"),
+      display_name: z.string().nullable().optional(),
+      email: z.string().email("Invalid email format").nullable().optional().or(z.literal('')),
+      team: z.string().nullable().optional()
+    });
+    
+    const UserMappingsArraySchema = z.array(UserMappingSchema);
+
+    const parsedMappings = UserMappingsArraySchema.parse(mappings);
+
+    await replaceUserMappings(parsedMappings);
+    
+    revalidatePath('/settings');
+    return { success: true };
+  } catch (error) {
+    logger.error({ error, operation: 'action_save_mappings' }, 'Failed to save mappings via action');
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to save mappings' };
   }
 }
 
@@ -95,17 +131,16 @@ export async function savePricingAction(pricing: PricingConfig) {
   try {
     await requireUser();
 
-    // Input Validation: rates must be non-negative numbers
-    for (const [model, rates] of Object.entries(pricing)) {
-      if (typeof rates.input !== 'number' || rates.input < 0 || isNaN(rates.input)) {
-        throw new Error(`Invalid input rate for ${model}: must be a non-negative number`);
-      }
-      if (typeof rates.output !== 'number' || rates.output < 0 || isNaN(rates.output)) {
-        throw new Error(`Invalid output rate for ${model}: must be a non-negative number`);
-      }
-    }
+    const PricingRateSchema = z.object({
+      input: z.number().min(0, "Input rate must be a non-negative number"),
+      output: z.number().min(0, "Output rate must be a non-negative number")
+    });
+    
+    const PricingConfigSchema = z.record(z.string(), PricingRateSchema);
 
-    await updatePricing(pricing);
+    const parsedPricing = PricingConfigSchema.parse(pricing);
+
+    await updatePricing(parsedPricing);
 
     logger.info({
       operation: 'save_pricing_action',
