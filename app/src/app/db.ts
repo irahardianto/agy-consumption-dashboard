@@ -55,9 +55,14 @@ export async function getUserSessions(
         full_request,
         full_response,
         JSON_EXTRACT_SCALAR(full_request, '$.labels.trajectory_id') AS trajectory_id,
-        JSON_EXTRACT_SCALAR(full_request, '$.contents[0].parts[0].text') AS first_part_text
+        COALESCE(
+          JSON_EXTRACT_SCALAR(full_request, '$.system_instruction.parts[0].text'),
+          JSON_EXTRACT_SCALAR(full_request, '$.contents[0].parts[0].text'),
+          full_request
+        ) AS first_part_text
       FROM \`${DATASET}.request_response_logs\`
-      WHERE logging_time >= TIMESTAMP(@startDate) AND logging_time <= TIMESTAMP(@endDate)
+      WHERE logging_time >= TIMESTAMP(@startDate)
+        AND logging_time < TIMESTAMP_ADD(TIMESTAMP(@endDate), INTERVAL 1 DAY)
     ),
     active_trajectories AS (
       SELECT DISTINCT trajectory_id FROM raw_logs WHERE trajectory_id IS NOT NULL AND trajectory_id != ''
@@ -70,20 +75,31 @@ export async function getUserSessions(
           REGEXP_EXTRACT(first_part_text, r'/home/([^/]+)/'),
           REGEXP_EXTRACT(first_part_text, r'C:\\\\Users\\\\([^\\\\/]+)')
         ) AS os_username
-      FROM \`${DATASET}.request_response_logs\`
-      WHERE logging_time >= TIMESTAMP_SUB(TIMESTAMP(@startDate), INTERVAL 14 DAY)
-        AND JSON_EXTRACT_SCALAR(full_request, '$.labels.trajectory_id') IN (SELECT trajectory_id FROM active_trajectories)
+      FROM (
+        SELECT
+          JSON_EXTRACT_SCALAR(full_request, '$.labels.trajectory_id') AS trajectory_id,
+          COALESCE(
+            JSON_EXTRACT_SCALAR(full_request, '$.system_instruction.parts[0].text'),
+            JSON_EXTRACT_SCALAR(full_request, '$.contents[0].parts[0].text'),
+            full_request
+          ) AS first_part_text
+        FROM \`${DATASET}.request_response_logs\`
+        WHERE logging_time >= TIMESTAMP_SUB(TIMESTAMP(@startDate), INTERVAL 14 DAY)
+          AND logging_time < TIMESTAMP_ADD(TIMESTAMP(@endDate), INTERVAL 1 DAY)
+      )
+      WHERE trajectory_id IS NOT NULL AND trajectory_id != ''
+        AND trajectory_id IN (SELECT trajectory_id FROM active_trajectories)
         AND (
-          REGEXP_CONTAINS(JSON_EXTRACT_SCALAR(full_request, '$.contents[0].parts[0].text'), r'/Users/([^/]+)/') OR
-          REGEXP_CONTAINS(JSON_EXTRACT_SCALAR(full_request, '$.contents[0].parts[0].text'), r'/home/([^/]+)/') OR
-          REGEXP_CONTAINS(JSON_EXTRACT_SCALAR(full_request, '$.contents[0].parts[0].text'), r'C:\\\\Users\\\\([^\\\\/]+)')
+          REGEXP_CONTAINS(first_part_text, r'/Users/([^/]+)/') OR
+          REGEXP_CONTAINS(first_part_text, r'/home/([^/]+)/') OR
+          REGEXP_CONTAINS(first_part_text, r'C:\\\\Users\\\\([^\\\\/]+)')
         )
     ),
     attributed AS (
       SELECT
         r.logging_time,
         r.model AS raw_model_name,
-        REGEXP_EXTRACT(r.model, r'models/(.+)') AS model_name,
+        COALESCE(REGEXP_EXTRACT(r.model, r'models/(.+)'), r.model) AS model_name,
         r.trajectory_id,
         COALESCE(
           REGEXP_EXTRACT(r.first_part_text, r'/Users/([^/]+)/'),
@@ -106,6 +122,7 @@ export async function getUserSessions(
           CASE 
             WHEN a.raw_model_name LIKE '%2.0-flash-exp%' THEN 0.0 
             WHEN a.raw_model_name LIKE '%pro%' THEN 1.25 
+            WHEN a.raw_model_name LIKE '%flash-lite%' THEN 0.025
             WHEN a.raw_model_name LIKE '%flash%' THEN 0.075 
             ELSE 0.0 
           END
@@ -114,7 +131,8 @@ export async function getUserSessions(
           p.output_cost_per_m,
           CASE 
             WHEN a.raw_model_name LIKE '%2.0-flash-exp%' THEN 0.0 
-            WHEN a.raw_model_name LIKE '%pro%' THEN 3.75 
+            WHEN a.raw_model_name LIKE '%pro%' THEN 5.00 
+            WHEN a.raw_model_name LIKE '%flash-lite%' THEN 0.10
             WHEN a.raw_model_name LIKE '%flash%' THEN 0.30 
             ELSE 0.0 
           END
@@ -149,17 +167,28 @@ export async function getUserSessions(
 
   try {
     const rows = await bq.query<any>(options);
-    return rows.map(r => ({
-      trajectory_id: String(r.trajectory_id || ''),
-      request_count: Number(r.request_count || 0),
-      input_tokens: Number(r.input_tokens || 0),
-      output_tokens: Number(r.output_tokens || 0),
-      thinking_tokens: Number(r.thinking_tokens || 0),
-      total_tokens: Number(r.total_tokens || 0),
-      cost: Number(r.cost || 0),
-      models: Array.isArray(r.models) ? r.models.map(String) : [],
-      last_active: r.last_active ? new Date(r.last_active.value).toISOString() : '',
-    }));
+    return rows.map(r => {
+      let lastActiveIso = '';
+      if (r.last_active) {
+        if (typeof r.last_active === 'object' && r.last_active !== null && 'value' in r.last_active) {
+          lastActiveIso = new Date(r.last_active.value).toISOString();
+        } else {
+          lastActiveIso = new Date(r.last_active).toISOString();
+        }
+      }
+
+      return {
+        trajectory_id: String(r.trajectory_id || ''),
+        request_count: Number(r.request_count || 0),
+        input_tokens: Number(r.input_tokens || 0),
+        output_tokens: Number(r.output_tokens || 0),
+        thinking_tokens: Number(r.thinking_tokens || 0),
+        total_tokens: Number(r.total_tokens || 0),
+        cost: Number(r.cost || 0),
+        models: Array.isArray(r.models) ? r.models.map(String) : [],
+        last_active: lastActiveIso,
+      };
+    });
   } catch (error) {
     logger.error({ error, username, operation: 'get_user_sessions' }, 'Failed to fetch user sessions');
     return [];
@@ -198,6 +227,7 @@ export async function getUsersWithDetails(
             CASE 
               WHEN u.model LIKE '%2.0-flash-exp%' THEN 0.0 
               WHEN u.model LIKE '%pro%' THEN 1.25 
+              WHEN u.model LIKE '%flash-lite%' THEN 0.025
               WHEN u.model LIKE '%flash%' THEN 0.075 
               ELSE 0.0 
             END
@@ -206,7 +236,8 @@ export async function getUsersWithDetails(
             p.output_cost_per_m,
             CASE 
               WHEN u.model LIKE '%2.0-flash-exp%' THEN 0.0 
-              WHEN u.model LIKE '%pro%' THEN 3.75 
+              WHEN u.model LIKE '%pro%' THEN 5.00 
+              WHEN u.model LIKE '%flash-lite%' THEN 0.10
               WHEN u.model LIKE '%flash%' THEN 0.30 
               ELSE 0.0 
             END
