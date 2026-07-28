@@ -69,11 +69,12 @@ load_config() {
   # Default models if not set in config
   if [[ -z "${GEMINI_MODELS+x}" ]] || [[ ${#GEMINI_MODELS[@]} -eq 0 ]]; then
     GEMINI_MODELS=(
+      "gemini-3.6-flash"
       "gemini-3.5-flash"
+      "gemini-3.5-flash-lite"
+      "gemini-3.1-pro-preview"
       "gemini-3.1-flash-lite"
-      "gemini-2.5-pro"
-      "gemini-2.5-flash"
-      "gemini-2.5-flash-lite"
+      "gemini-3-flash-preview"
     )
   fi
 
@@ -178,17 +179,29 @@ write_tfvars() {
   
   # Prepare authorized_members array for HCL
   local members_hcl="["
+  local first=true
   for member in "${AUTHORIZED_MEMBERS[@]}"; do
-    members_hcl="${members_hcl}\n  \"${member}\","
+    if [[ "${first}" == "true" ]]; then
+      first=false
+    else
+      members_hcl="${members_hcl},"
+    fi
+    members_hcl="${members_hcl}\"${member}\""
   done
-  members_hcl="${members_hcl}\n]"
+  members_hcl="${members_hcl}]"
 
   # Prepare gemini_models array for HCL
   local models_hcl="["
+  first=true
   for model in "${GEMINI_MODELS[@]}"; do
-    models_hcl="${models_hcl}\n  \"${model}\","
+    if [[ "${first}" == "true" ]]; then
+      first=false
+    else
+      models_hcl="${models_hcl},"
+    fi
+    models_hcl="${models_hcl}\"${model}\""
   done
-  models_hcl="${models_hcl}\n]"
+  models_hcl="${models_hcl}]"
 
   cat > "${tfvars_file}" <<EOF
 # Generated dynamically by deploy.sh from config.env. Do not edit directly.
@@ -209,7 +222,7 @@ run_terraform() {
   log_step "Running Terraform to provision infrastructure"
   
   log "Initializing Terraform..."
-  terraform -chdir="${SCRIPT_DIR}/terraform" init
+  terraform -chdir="${SCRIPT_DIR}/terraform" init -upgrade
   
   log "Applying Terraform configuration..."
   terraform -chdir="${SCRIPT_DIR}/terraform" apply -auto-approve
@@ -233,6 +246,9 @@ deploy_cloud_run() {
     iap_audience="/projects/${project_num}/global/backendServices/${backend_id}"
   fi
 
+  local gemini_models_str
+  gemini_models_str=$(IFS=,; echo "${GEMINI_MODELS[*]}")
+
   log "Deploying to Cloud Run — this uses Buildpacks to build from source..."
   gcloud run deploy "${SERVICE_NAME}" \
     --source "${SCRIPT_DIR}/app" \
@@ -240,7 +256,7 @@ deploy_cloud_run() {
     --project "${PROJECT_ID}" \
     --service-account "${sa_email}" \
     --ingress "internal-and-cloud-load-balancing" \
-    --set-env-vars "PROJECT_ID=${PROJECT_ID},BQ_DATASET=${DATASET_ID},IAP_AUDIENCE=${iap_audience}" \
+    --set-env-vars "^;^PROJECT_ID=${PROJECT_ID};BQ_DATASET=${DATASET_ID};IAP_AUDIENCE=${iap_audience};GEMINI_MODELS=${gemini_models_str}" \
     --quiet
 
   log_ok "Cloud Run service build and deployment complete"

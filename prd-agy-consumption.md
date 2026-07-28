@@ -125,7 +125,7 @@ Required variables:
 
 Optional variables:
 - `dataset_id` — BigQuery dataset name (default: `agy_consumption`)
-- `gemini_models` — List of Gemini models to enable logging for (default: `["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-2.0-flash"]`)
+- `gemini_models` — List of Gemini models to enable logging for (default: `["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.1-pro-preview", "gemini-3-flash-preview"]`)
 - `cloud_run_cpu` / `cloud_run_memory` — Resource limits
 
 #### [NEW] [outputs.tf](file:///Users/irahardianto/works/agy-consumption-dashboard/terraform/outputs.tf)

@@ -1,0 +1,4 @@
+[build]
+  [[build.env]]
+    name = "GOOGLE_BUILD_DEV_DEPS"
+    value = "true"
