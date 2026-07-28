@@ -20,17 +20,17 @@ interface PricingFormProps {
   initialPricing: PricingConfig;
 }
 
+function formatRate(valStr: string): string {
+  const num = parseFloat(valStr);
+  if (isNaN(num)) return '0.000';
+  const decimals = valStr.includes('.') && (valStr.split('.')[1]?.length ?? 0) > 3 ? 4 : 3;
+  return num.toFixed(decimals);
+}
+
 export function PricingForm({ initialPricing }: PricingFormProps) {
   const [rows, setRows] = useState<Record<string, RowState>>(() => {
     const initial: Record<string, RowState> = {};
-    // Ensure all PRICING_DEFAULTS models are represented, merged with initialPricing overrides
-    const allModels = new Set([
-      ...Object.keys(PRICING_DEFAULTS),
-      ...Object.keys(initialPricing),
-    ]);
-
-    allModels.forEach((model) => {
-      const rate = initialPricing[model] || PRICING_DEFAULTS[model] || { input: 0, output: 0 };
+    Object.entries(initialPricing).forEach(([model, rate]) => {
       initial[model] = {
         model,
         input: rate.input.toString(),
@@ -222,8 +222,8 @@ export function PricingForm({ initialPricing }: PricingFormProps) {
     if (result.success) {
       setRows(() => {
         const reset: Record<string, RowState> = {};
-        Object.keys(PRICING_DEFAULTS).forEach((model) => {
-          const rate = PRICING_DEFAULTS[model]!;
+        Object.keys(initialPricing).forEach((model) => {
+          const rate = PRICING_DEFAULTS[model] || initialPricing[model] || { input: 0, output: 0 };
           reset[model] = {
             model,
             input: rate.input.toString(),
@@ -336,7 +336,7 @@ export function PricingForm({ initialPricing }: PricingFormProps) {
                       </div>
                     ) : (
                       <span className={styles.rateValue}>
-                        {parseFloat(row.input).toFixed(row.input.includes('.') && row.input.split('.')[1]!.length > 3 ? 4 : 3)}
+                        {formatRate(row.input)}
                       </span>
                     )}
                   </td>
@@ -367,7 +367,7 @@ export function PricingForm({ initialPricing }: PricingFormProps) {
                       </div>
                     ) : (
                       <span className={styles.rateValue}>
-                        {parseFloat(row.output).toFixed(row.output.includes('.') && row.output.split('.')[1]!.length > 3 ? 4 : 3)}
+                        {formatRate(row.output)}
                       </span>
                     )}
                   </td>
