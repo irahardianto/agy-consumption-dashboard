@@ -9,14 +9,19 @@ import {
 } from './cost';
 
 describe('calculateCost', () => {
-  it('calculates cost correctly for gemini-1.5-pro', () => {
-    const cost = calculateCost('gemini-1.5-pro', 1_000_000, 1_000_000);
-    expect(cost).toBe(PRICING_DEFAULTS['gemini-1.5-pro'].input + PRICING_DEFAULTS['gemini-1.5-pro'].output);
+  it('calculates cost correctly for gemini-3.5-flash', () => {
+    const cost = calculateCost('gemini-3.5-flash', 1_000_000, 1_000_000);
+    expect(cost).toBe(PRICING_DEFAULTS['gemini-3.5-flash'].input + PRICING_DEFAULTS['gemini-3.5-flash'].output);
   });
 
-  it('calculates cost correctly for gemini-1.5-flash', () => {
-    const cost = calculateCost('gemini-1.5-flash', 1_000_000, 1_000_000);
-    expect(cost).toBe(PRICING_DEFAULTS['gemini-1.5-flash'].input + PRICING_DEFAULTS['gemini-1.5-flash'].output);
+  it('calculates cost correctly for gemini-3.1-pro-preview', () => {
+    const cost = calculateCost('gemini-3.1-pro-preview', 1_000_000, 1_000_000);
+    expect(cost).toBe(PRICING_DEFAULTS['gemini-3.1-pro-preview'].input + PRICING_DEFAULTS['gemini-3.1-pro-preview'].output);
+  });
+
+  it('calculates cost correctly for gemini-3-flash-preview', () => {
+    const cost = calculateCost('gemini-3-flash-preview', 1_000_000, 1_000_000);
+    expect(cost).toBe(PRICING_DEFAULTS['gemini-3-flash-preview'].input + PRICING_DEFAULTS['gemini-3-flash-preview'].output);
   });
 
   it('returns 0 for unknown models', () => {
@@ -26,12 +31,12 @@ describe('calculateCost', () => {
 
   it('calculates cost with custom pricing overrides', () => {
     const customPricing = {
-      'gemini-1.5-pro': {
+      'gemini-3.5-flash': {
         input: 2.0,
         output: 5.0,
       },
     };
-    const cost = calculateCost('gemini-1.5-pro', 1_000_000, 1_000_000, 0, customPricing);
+    const cost = calculateCost('gemini-3.5-flash', 1_000_000, 1_000_000, 0, customPricing);
     expect(cost).toBe(7.0);
   });
 });
@@ -39,8 +44,8 @@ describe('calculateCost', () => {
 describe('getPricingFromSettings', () => {
   it('merges settings onto defaults correctly', () => {
     const settings = {
-      'pricing:gemini-1.5-pro:input': '2.50',
-      'pricing:gemini-1.5-pro:output': '6.00',
+      'pricing:gemini-3.5-flash:input': '2.50',
+      'pricing:gemini-3.5-flash:output': '6.00',
       'pricing:new-custom-model:input': '1.00',
       'pricing:new-custom-model:output': '2.00',
       'other:setting:key': 'value',
@@ -48,13 +53,13 @@ describe('getPricingFromSettings', () => {
 
     const config = getPricingFromSettings(settings);
 
-    expect(config['gemini-1.5-pro']).toEqual({
+    expect(config['gemini-3.5-flash']).toEqual({
       input: 2.5,
       output: 6.0,
     });
-    expect(config['gemini-1.5-flash']).toEqual({
-      input: 0.075,
-      output: 0.3,
+    expect(config['gemini-3.6-flash']).toEqual({
+      input: 1.5,
+      output: 7.5,
     });
     expect(config['new-custom-model']).toEqual({
       input: 1.0,
@@ -64,13 +69,27 @@ describe('getPricingFromSettings', () => {
 
   it('ignores invalid numeric rates in settings', () => {
     const settings = {
-      'pricing:gemini-1.5-pro:input': 'invalid-number',
-      'pricing:gemini-1.5-pro:output': '4.50',
+      'pricing:gemini-3.5-flash:input': 'invalid-number',
+      'pricing:gemini-3.5-flash:output': '4.50',
     };
 
     const config = getPricingFromSettings(settings);
-    expect(config['gemini-1.5-pro']?.input).toBe(PRICING_DEFAULTS['gemini-1.5-pro'].input);
-    expect(config['gemini-1.5-pro']?.output).toBe(4.5);
+    expect(config['gemini-3.5-flash']?.input).toBe(PRICING_DEFAULTS['gemini-3.5-flash'].input);
+    expect(config['gemini-3.5-flash']?.output).toBe(4.5);
+  });
+
+  it('parses process.env.GEMINI_MODELS when provided', () => {
+    const originalEnv = process.env.GEMINI_MODELS;
+    try {
+      process.env.GEMINI_MODELS = 'gemini-3.5-flash, gemini-3.1-flash-lite, gemini-4.0-pro';
+      const config = getPricingFromSettings({});
+      expect(config['gemini-3.5-flash']).toEqual({ input: 1.50, output: 9.0 });
+      expect(config['gemini-3.1-flash-lite']).toEqual({ input: 0.25, output: 1.5 });
+      expect(config['gemini-4.0-pro']).toEqual({ input: 1.25, output: 10.0 });
+      expect(config['gemini-3.6-flash']).toBeUndefined();
+    } finally {
+      process.env.GEMINI_MODELS = originalEnv;
+    }
   });
 });
 

@@ -161,18 +161,26 @@ export async function getOverviewMetrics(
         (u.input_tokens / 1000000) * COALESCE(
           p.input_cost_per_m,
           CASE 
-            WHEN u.model LIKE '%2.0-flash-exp%' THEN 0.0 
+            WHEN u.model LIKE '%3.6-flash%' THEN 1.50
+            WHEN u.model LIKE '%3.5-flash%' THEN 1.50
+            WHEN u.model LIKE '%3.1-pro%' THEN 2.00
+            WHEN u.model LIKE '%3-flash%' THEN 0.50
             WHEN u.model LIKE '%pro%' THEN 1.25 
-            WHEN u.model LIKE '%flash%' THEN 0.075 
+            WHEN u.model LIKE '%flash-lite%' THEN 0.25
+            WHEN u.model LIKE '%flash%' THEN 0.30 
             ELSE 0.0 
           END
         ) + 
         ((u.output_tokens + COALESCE(u.thinking_tokens, 0)) / 1000000) * COALESCE(
           p.output_cost_per_m,
           CASE 
-            WHEN u.model LIKE '%2.0-flash-exp%' THEN 0.0 
-            WHEN u.model LIKE '%pro%' THEN 3.75 
-            WHEN u.model LIKE '%flash%' THEN 0.30 
+            WHEN u.model LIKE '%3.6-flash%' THEN 7.50
+            WHEN u.model LIKE '%3.5-flash%' THEN 9.00
+            WHEN u.model LIKE '%3.1-pro%' THEN 12.00
+            WHEN u.model LIKE '%3-flash%' THEN 3.00
+            WHEN u.model LIKE '%pro%' THEN 10.00 
+            WHEN u.model LIKE '%flash-lite%' THEN 1.50
+            WHEN u.model LIKE '%flash%' THEN 2.50 
             ELSE 0.0 
           END
         )
@@ -212,6 +220,8 @@ export async function getUsageOverTime(
   endDate?: Date | string,
   username?: string
 ): Promise<UsageDataPoint[]> {
+  const userFilter = username ? 'AND u.os_username = @username' : '';
+
   const query = `
     WITH pricing AS (
       SELECT
@@ -231,18 +241,26 @@ export async function getUsageOverTime(
         (u.input_tokens / 1000000) * COALESCE(
           p.input_cost_per_m,
           CASE 
-            WHEN u.model LIKE '%2.0-flash-exp%' THEN 0.0 
+            WHEN u.model LIKE '%3.6-flash%' THEN 1.50
+            WHEN u.model LIKE '%3.5-flash%' THEN 1.50
+            WHEN u.model LIKE '%3.1-pro%' THEN 2.00
+            WHEN u.model LIKE '%3-flash%' THEN 0.50
             WHEN u.model LIKE '%pro%' THEN 1.25 
-            WHEN u.model LIKE '%flash%' THEN 0.075 
+            WHEN u.model LIKE '%flash-lite%' THEN 0.25
+            WHEN u.model LIKE '%flash%' THEN 0.30 
             ELSE 0.0 
           END
         ) + 
         ((u.output_tokens + COALESCE(u.thinking_tokens, 0)) / 1000000) * COALESCE(
           p.output_cost_per_m,
           CASE 
-            WHEN u.model LIKE '%2.0-flash-exp%' THEN 0.0 
-            WHEN u.model LIKE '%pro%' THEN 3.75 
-            WHEN u.model LIKE '%flash%' THEN 0.30 
+            WHEN u.model LIKE '%3.6-flash%' THEN 7.50
+            WHEN u.model LIKE '%3.5-flash%' THEN 9.00
+            WHEN u.model LIKE '%3.1-pro%' THEN 12.00
+            WHEN u.model LIKE '%3-flash%' THEN 3.00
+            WHEN u.model LIKE '%pro%' THEN 10.00 
+            WHEN u.model LIKE '%flash-lite%' THEN 1.50
+            WHEN u.model LIKE '%flash%' THEN 2.50 
             ELSE 0.0 
           END
         )
@@ -251,28 +269,32 @@ export async function getUsageOverTime(
     LEFT JOIN pricing p ON u.model = p.model
     WHERE u.day >= COALESCE(CAST(@startDate AS DATE), DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY))
       AND u.day <= COALESCE(CAST(@endDate AS DATE), CURRENT_DATE())
-      AND (@username IS NULL OR u.os_username = @username)
+      ${userFilter}
     GROUP BY u.day, u.model
     ORDER BY day ASC
   `;
 
+  const params: Record<string, any> = {
+    startDate: formatDate(startDate),
+    endDate: formatDate(endDate),
+  };
+  if (username) {
+    params.username = username;
+  }
+
   const options = {
     query,
-    params: {
-      startDate: formatDate(startDate),
-      endDate: formatDate(endDate),
-      username: username || null,
-    },
+    params,
   };
 
   try {
     const rows = await bq.query<any>(options);
     return rows.map(r => ({
-      day: String(r.day),
-      tokens: Number(r.tokens),
-      requests: Number(r.requests),
-      cost: Number(r.cost),
-      model: String(r.model)
+      day: typeof r.day === 'object' && r.day !== null && 'value' in r.day ? String(r.day.value) : String(r.day || ''),
+      tokens: Number(r.tokens || 0),
+      requests: Number(r.requests || 0),
+      cost: Number(r.cost || 0),
+      model: String(r.model || ''),
     }));
   } catch (error) {
     logger.error({ error, operation: 'get_usage_over_time' }, 'Failed to fetch usage over time');
@@ -306,18 +328,26 @@ export async function getTopUsers(
           (u.input_tokens / 1000000) * COALESCE(
             p.input_cost_per_m,
             CASE 
-              WHEN u.model LIKE '%2.0-flash-exp%' THEN 0.0 
+              WHEN u.model LIKE '%3.6-flash%' THEN 1.50
+              WHEN u.model LIKE '%3.5-flash%' THEN 1.50
+              WHEN u.model LIKE '%3.1-pro%' THEN 2.00
+              WHEN u.model LIKE '%3-flash%' THEN 0.50
               WHEN u.model LIKE '%pro%' THEN 1.25 
-              WHEN u.model LIKE '%flash%' THEN 0.075 
+              WHEN u.model LIKE '%flash-lite%' THEN 0.25
+              WHEN u.model LIKE '%flash%' THEN 0.30 
               ELSE 0.0 
             END
           ) + 
           ((u.output_tokens + COALESCE(u.thinking_tokens, 0)) / 1000000) * COALESCE(
             p.output_cost_per_m,
             CASE 
-              WHEN u.model LIKE '%2.0-flash-exp%' THEN 0.0 
-              WHEN u.model LIKE '%pro%' THEN 3.75 
-              WHEN u.model LIKE '%flash%' THEN 0.30 
+              WHEN u.model LIKE '%3.6-flash%' THEN 7.50
+              WHEN u.model LIKE '%3.5-flash%' THEN 9.00
+              WHEN u.model LIKE '%3.1-pro%' THEN 12.00
+              WHEN u.model LIKE '%3-flash%' THEN 3.00
+              WHEN u.model LIKE '%pro%' THEN 10.00 
+              WHEN u.model LIKE '%flash-lite%' THEN 1.50
+              WHEN u.model LIKE '%flash%' THEN 2.50 
               ELSE 0.0 
             END
           )

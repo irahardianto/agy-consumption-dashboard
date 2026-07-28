@@ -47,7 +47,7 @@ describe('bigquery service helpers', () => {
     const mockData = [
       {
         day: '2026-07-01',
-        model: 'gemini-1.5-flash',
+        model: 'gemini-3.5-flash',
         tokens: 5000,
         requests: 10,
         cost: 0.1,
@@ -73,10 +73,44 @@ describe('bigquery service helpers', () => {
     expect(result).toEqual([
       {
         day: '2026-07-01',
-        model: 'gemini-1.5-flash',
+        model: 'gemini-3.5-flash',
         tokens: 5000,
         requests: 10,
         cost: 0.1,
+      }
+    ]);
+  });
+
+  it('should omit username from params when not provided in getUsageOverTime and handle BigQueryDate objects', async () => {
+    // Arrange
+    const mockData = [
+      {
+        day: { value: '2026-07-01' },
+        model: 'gemini-3.5-flash',
+        tokens: 15000,
+        requests: 20,
+        cost: 0.2,
+      }
+    ];
+    querySpy.mockResolvedValueOnce(mockData);
+
+    // Act
+    const result = await getUsageOverTime('2026-07-01', '2026-07-05');
+
+    // Assert
+    expect(querySpy).toHaveBeenCalledTimes(1);
+    const callArgs = querySpy.mock.calls[0][0];
+    expect(callArgs.params).toEqual({
+      startDate: '2026-07-01',
+      endDate: '2026-07-05',
+    });
+    expect(result).toEqual([
+      {
+        day: '2026-07-01',
+        model: 'gemini-3.5-flash',
+        tokens: 15000,
+        requests: 20,
+        cost: 0.2,
       }
     ]);
   });

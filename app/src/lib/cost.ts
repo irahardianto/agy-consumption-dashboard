@@ -12,30 +12,71 @@ export type PricingConfig = Record<string, ModelPricing>;
  * These are defaults and could be overridden by settings in the future.
  */
 export const PRICING_DEFAULTS: PricingConfig = {
-  'gemini-1.5-pro': {
-    input: 1.25,
-    output: 3.75,
+  'gemini-3.6-flash': {
+    input: 1.50,
+    output: 7.50,
   },
-  'gemini-1.5-flash': {
-    input: 0.075,
-    output: 0.30,
+  'gemini-3.5-flash': {
+    input: 1.50,
+    output: 9.00,
   },
-  'gemini-2.0-flash-exp': {
-    input: 0.00,
-    output: 0.00,
+  'gemini-3.5-flash-lite': {
+    input: 0.30,
+    output: 2.50,
+  },
+  'gemini-3.1-pro-preview': {
+    input: 2.00,
+    output: 12.00,
+  },
+  'gemini-3.1-flash-lite': {
+    input: 0.25,
+    output: 1.50,
+  },
+  'gemini-3-flash-preview': {
+    input: 0.50,
+    output: 3.00,
   },
 };
 
 /**
  * Parses flat database settings records to build a structured pricing configuration.
- * Resolves settings keys like "pricing:gemini-1.5-pro:input".
+ * Resolves settings keys like "pricing:gemini-3.5-flash:input".
+ * Only includes models specified in process.env.GEMINI_MODELS when configured.
  * 
  * @param settings Flat key-value record fetched from settings table.
  */
 export function getPricingFromSettings(settings: Record<string, string>): PricingConfig {
   const result: PricingConfig = {};
-  for (const [model, defaults] of Object.entries(PRICING_DEFAULTS)) {
-    result[model] = { ...defaults };
+
+  let modelList: string[];
+  if (process.env.GEMINI_MODELS) {
+    modelList = process.env.GEMINI_MODELS.split(/[,;\s]+/).map(m => m.trim()).filter(Boolean);
+  } else {
+    modelList = Object.keys(PRICING_DEFAULTS);
+  }
+
+  for (const model of modelList) {
+    if (PRICING_DEFAULTS[model]) {
+      result[model] = { ...PRICING_DEFAULTS[model] };
+    } else {
+      if (model.includes('3.6-flash')) {
+        result[model] = { input: 1.50, output: 7.50 };
+      } else if (model.includes('3.5-flash')) {
+        result[model] = { input: 1.50, output: 9.00 };
+      } else if (model.includes('3.1-pro')) {
+        result[model] = { input: 2.00, output: 12.00 };
+      } else if (model.includes('3-flash')) {
+        result[model] = { input: 0.50, output: 3.00 };
+      } else if (model.includes('flash-lite')) {
+        result[model] = { input: 0.25, output: 1.50 };
+      } else if (model.includes('flash')) {
+        result[model] = { input: 0.30, output: 2.50 };
+      } else if (model.includes('pro')) {
+        result[model] = { input: 1.25, output: 10.00 };
+      } else {
+        result[model] = { input: 0.0, output: 0.0 };
+      }
+    }
   }
 
   for (const [key, value] of Object.entries(settings)) {
