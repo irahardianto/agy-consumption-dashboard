@@ -163,7 +163,9 @@ export function UsageHeatmap({ startDate, endDate, data }: UsageHeatmapProps) {
                   })}
                 </div>
                 <div style={{ fontSize: '12px', color: 'var(--md-sys-color-primary)', fontWeight: '600' }}>
-                  {days[hoveredIndex].value.toLocaleString()} tokens
+                  {days[hoveredIndex].value >= 1_000_000
+                    ? `${(days[hoveredIndex].value / 1_000_000).toFixed(2)}M (${days[hoveredIndex].value.toLocaleString()}) tokens`
+                    : `${days[hoveredIndex].value.toLocaleString()} tokens`}
                 </div>
               </div>
             )}

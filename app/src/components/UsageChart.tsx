@@ -45,6 +45,20 @@ function formatDay(dateStr: string): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+/** Format token values cleanly (e.g. 60.30M, 120k). */
+function formatTokenValue(value: number): string {
+  if (value >= 1_000_000_000) {
+    return `${(value / 1_000_000_000).toFixed(2)}B`;
+  }
+  if (value >= 1_000_000) {
+    return `${(value / 1_000_000).toFixed(2)}M`;
+  }
+  if (value >= 1_000) {
+    return `${(value / 1_000).toFixed(1)}k`;
+  }
+  return value.toString();
+}
+
 export const UsageChart: React.FC<UsageChartProps> = ({ data }) => {
   const aggregated = aggregateByDay(data);
 
@@ -95,13 +109,13 @@ export const UsageChart: React.FC<UsageChartProps> = ({ data }) => {
           axisLine={false}
           tickLine={false}
           tick={{ fill: 'var(--md-sys-color-on-surface-variant)', fontSize: 12 }}
-          tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`}
+          tickFormatter={formatTokenValue}
         />
         <Tooltip
           labelFormatter={formatDay}
           formatter={(value: number, name: string) => {
-            if (name === 'tokens') return [`${(value / 1000).toFixed(1)}k`, 'Tokens'];
-            if (name === 'requests') return [value, 'Requests'];
+            if (name === 'tokens') return [`${formatTokenValue(value)} (${value.toLocaleString()})`, 'Tokens'];
+            if (name === 'requests') return [value.toLocaleString(), 'Requests'];
             return [value, name];
           }}
           contentStyle={{

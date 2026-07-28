@@ -45,7 +45,11 @@ export default async function UserDetailPage({
 
   // Aggregate model usage from usageData
   const modelUsageMap = usageData.reduce((acc, curr) => {
-    acc[curr.model] = (acc[curr.model] || 0) + curr.tokens;
+    const rawLabel = curr.model || 'Unknown';
+    const cleanLabel = rawLabel
+      .replace(/^publishers\/[^\/]+\/models\//, '')
+      .replace(/^models\//, '');
+    acc[cleanLabel] = (acc[cleanLabel] || 0) + curr.tokens;
     return acc;
   }, {} as Record<string, number>);
 

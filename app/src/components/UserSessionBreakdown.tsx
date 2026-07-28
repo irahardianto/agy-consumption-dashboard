@@ -17,6 +17,12 @@ interface UserSessionBreakdownProps {
   sessions: SessionData[];
 }
 
+const formatModelName = (model: string): string => {
+  if (!model) return 'unknown';
+  let name = model.replace(/^publishers\/[^\/]+\/models\//, '').replace(/^models\//, '');
+  return name;
+};
+
 export const UserSessionBreakdown: React.FC<UserSessionBreakdownProps> = ({ sessions }) => {
   if (!sessions || sessions.length === 0) {
     return (
@@ -56,10 +62,17 @@ export const UserSessionBreakdown: React.FC<UserSessionBreakdownProps> = ({ sess
         </thead>
         <tbody>
           {sessions.map((session, i) => {
-            const date = typeof session.last_active === 'string' ? new Date(session.last_active) : session.last_active;
+            let formattedDate = 'N/A';
+            if (session.last_active) {
+              const d = typeof session.last_active === 'string' ? new Date(session.last_active) : session.last_active;
+              if (!isNaN(d.getTime())) {
+                formattedDate = d.toLocaleString();
+              }
+            }
+
             return (
               <tr
-                key={session.trajectory_id}
+                key={session.trajectory_id || `session-${i}`}
                 style={{
                   backgroundColor: i % 2 === 0 ? 'transparent' : 'var(--md-sys-color-surface-container-lowest)',
                 }}
@@ -78,7 +91,7 @@ export const UserSessionBreakdown: React.FC<UserSessionBreakdownProps> = ({ sess
                       color: 'var(--md-sys-color-on-secondary-container)', 
                       fontSize: '12px' 
                     }}>
-                      {m}
+                      {formatModelName(m)}
                     </span>
                   ))}
                 </td>
@@ -89,7 +102,7 @@ export const UserSessionBreakdown: React.FC<UserSessionBreakdownProps> = ({ sess
                   {session.total_tokens.toLocaleString()}
                 </td>
                 <td style={{ ...tdStyle, textAlign: 'right' }}>
-                  {date.toLocaleString()}
+                  {formattedDate}
                 </td>
               </tr>
             );
