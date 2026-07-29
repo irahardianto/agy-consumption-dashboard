@@ -1,5 +1,10 @@
 # Antigravity Consumption Dashboard
 
+<div align="center">
+  <img src="dashboard.png" alt="Awesome AGV" width="800" />
+  <br/>
+</div>
+
 An open-source dashboard for tracking Antigravity CLI and Antigravity 2.0 usage per user — with real token counts, cost calculation, and model breakdowns.
 
 ## Architecture
@@ -9,6 +14,10 @@ An open-source dashboard for tracking Antigravity CLI and Antigravity 2.0 usage 
 - **Cloud Run** — Serverless compute (auto-scaling, zero maintenance)
 - **IAP (Identity-Aware Proxy)** — Secure authentication and access control
 - **gcloud CLI** — One-command deployment (no Terraform needed)
+
+<div align="center">
+  <img src="architecture.png" alt="Awesome AGV" width="800" />
+</div>
 
 ## Quick Start
 
