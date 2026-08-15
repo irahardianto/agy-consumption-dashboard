@@ -44,8 +44,14 @@ next-env.d.ts
 .agentwork/
 .certs/
 config.env
-terraform/
-docs/
 .agents/
 skills-lock.json
+
+# terraform
+.terraform/
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
 *.tfvars
+*.tfvars.json

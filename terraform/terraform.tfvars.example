@@ -1,0 +1,38 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Antigravity Consumption Dashboard — Example Terraform Variables
+# ─────────────────────────────────────────────────────────────────────────────
+# Copy this file to terraform.tfvars or configure via config.env + deploy.sh
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Required: Google Cloud Project ID
+project_id = "my-gcp-project-id"
+
+# Optional: Deployment region for Cloud Run and Serverless NEG
+region = "us-central1"
+
+# Optional: BigQuery dataset configuration
+dataset_id       = "agy_consumption"
+dataset_location = "US"
+
+# Optional: Custom domain (if set, uses Google-managed SSL cert)
+# domain = "dashboard.example.com"
+
+# Optional: IAP OAuth Credentials (created in GCP Console)
+# iap_oauth2_client_id     = "123456789-abcdef.apps.googleusercontent.com"
+# iap_oauth2_client_secret = "GOCSPX-xxxxxxxxxxxxxxxxxxxxxxxx"
+
+# Required for access: List of authorized users/groups for IAP
+authorized_members = [
+  "user:admin@example.com",
+  # "group:engineering@example.com",
+]
+
+# Optional: Gemini models to track via request-response logging
+gemini_models = [
+  "gemini-3.6-flash",
+  "gemini-3.5-flash",
+  "gemini-3.5-flash-lite",
+  "gemini-3.1-pro-preview",
+  "gemini-3.1-flash-lite",
+  "gemini-3-flash-preview"
+]
