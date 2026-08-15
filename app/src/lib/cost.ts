@@ -116,11 +116,11 @@ export function calculateCost(
   thinkingTokens: number = 0,
   pricing: PricingConfig = {}
 ): number {
-  let modelKey = Object.keys(pricing).find(k => model.includes(k));
+  let modelKey = Object.keys(pricing).sort((a, b) => b.length - a.length).find(k => model.includes(k));
   let rates = modelKey ? pricing[modelKey] : undefined;
 
   if (!rates) {
-    const defaultKey = Object.keys(PRICING_DEFAULTS).find(k => model.includes(k));
+    const defaultKey = Object.keys(PRICING_DEFAULTS).sort((a, b) => b.length - a.length).find(k => model.includes(k));
     rates = defaultKey ? PRICING_DEFAULTS[defaultKey] : undefined;
   }
 

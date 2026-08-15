@@ -120,21 +120,33 @@ export async function getUserSessions(
         (COALESCE(a.input_tokens, 0) / 1000000) * COALESCE(
           p.input_cost_per_m,
           CASE 
-            WHEN a.raw_model_name LIKE '%2.0-flash-exp%' THEN 0.0 
-            WHEN a.raw_model_name LIKE '%pro%' THEN 1.25 
-            WHEN a.raw_model_name LIKE '%flash-lite%' THEN 0.025
-            WHEN a.raw_model_name LIKE '%flash%' THEN 0.075 
-            ELSE 0.0 
+            WHEN LOWER(a.raw_model_name) LIKE '%gemini-3.5-flash-lite%' OR LOWER(a.raw_model_name) LIKE '%3.5-flash-lite%' THEN 0.30
+            WHEN LOWER(a.raw_model_name) LIKE '%gemini-3.1-flash-lite%' OR LOWER(a.raw_model_name) LIKE '%3.1-flash-lite%' THEN 0.25
+            WHEN LOWER(a.raw_model_name) LIKE '%gemini-3.6-flash%' OR LOWER(a.raw_model_name) LIKE '%3.6-flash%' THEN 1.50
+            WHEN LOWER(a.raw_model_name) LIKE '%gemini-3.5-flash%' OR LOWER(a.raw_model_name) LIKE '%3.5-flash%' THEN 1.50
+            WHEN LOWER(a.raw_model_name) LIKE '%gemini-3.1-pro-preview%' OR LOWER(a.raw_model_name) LIKE '%3.1-pro%' THEN 2.00
+            WHEN LOWER(a.raw_model_name) LIKE '%gemini-3-flash-preview%' OR LOWER(a.raw_model_name) LIKE '%3-flash%' THEN 0.50
+            WHEN LOWER(a.raw_model_name) LIKE '%flash-lite%' THEN 0.25
+            WHEN LOWER(a.raw_model_name) LIKE '%flash%' THEN 1.50
+            WHEN LOWER(a.raw_model_name) LIKE '%pro%' THEN 2.00
+            WHEN LOWER(a.raw_model_name) LIKE '%ultra%' THEN 5.00
+            ELSE 1.50 
           END
         ) + 
         ((COALESCE(a.output_tokens, 0) + COALESCE(a.thinking_tokens, 0)) / 1000000) * COALESCE(
           p.output_cost_per_m,
           CASE 
-            WHEN a.raw_model_name LIKE '%2.0-flash-exp%' THEN 0.0 
-            WHEN a.raw_model_name LIKE '%pro%' THEN 5.00 
-            WHEN a.raw_model_name LIKE '%flash-lite%' THEN 0.10
-            WHEN a.raw_model_name LIKE '%flash%' THEN 0.30 
-            ELSE 0.0 
+            WHEN LOWER(a.raw_model_name) LIKE '%gemini-3.5-flash-lite%' OR LOWER(a.raw_model_name) LIKE '%3.5-flash-lite%' THEN 2.50
+            WHEN LOWER(a.raw_model_name) LIKE '%gemini-3.1-flash-lite%' OR LOWER(a.raw_model_name) LIKE '%3.1-flash-lite%' THEN 1.50
+            WHEN LOWER(a.raw_model_name) LIKE '%gemini-3.6-flash%' OR LOWER(a.raw_model_name) LIKE '%3.6-flash%' THEN 7.50
+            WHEN LOWER(a.raw_model_name) LIKE '%gemini-3.5-flash%' OR LOWER(a.raw_model_name) LIKE '%3.5-flash%' THEN 9.00
+            WHEN LOWER(a.raw_model_name) LIKE '%gemini-3.1-pro-preview%' OR LOWER(a.raw_model_name) LIKE '%3.1-pro%' THEN 12.00
+            WHEN LOWER(a.raw_model_name) LIKE '%gemini-3-flash-preview%' OR LOWER(a.raw_model_name) LIKE '%3-flash%' THEN 3.00
+            WHEN LOWER(a.raw_model_name) LIKE '%flash-lite%' THEN 1.50
+            WHEN LOWER(a.raw_model_name) LIKE '%flash%' THEN 7.50
+            WHEN LOWER(a.raw_model_name) LIKE '%pro%' THEN 12.00
+            WHEN LOWER(a.raw_model_name) LIKE '%ultra%' THEN 20.00
+            ELSE 7.50 
           END
         ) AS cost
       FROM attributed a
@@ -225,21 +237,33 @@ export async function getUsersWithDetails(
           (u.input_tokens / 1000000) * COALESCE(
             p.input_cost_per_m,
             CASE 
-              WHEN u.model LIKE '%2.0-flash-exp%' THEN 0.0 
-              WHEN u.model LIKE '%pro%' THEN 1.25 
-              WHEN u.model LIKE '%flash-lite%' THEN 0.025
-              WHEN u.model LIKE '%flash%' THEN 0.075 
-              ELSE 0.0 
+              WHEN LOWER(u.model) LIKE '%gemini-3.5-flash-lite%' OR LOWER(u.model) LIKE '%3.5-flash-lite%' THEN 0.30
+              WHEN LOWER(u.model) LIKE '%gemini-3.1-flash-lite%' OR LOWER(u.model) LIKE '%3.1-flash-lite%' THEN 0.25
+              WHEN LOWER(u.model) LIKE '%gemini-3.6-flash%' OR LOWER(u.model) LIKE '%3.6-flash%' THEN 1.50
+              WHEN LOWER(u.model) LIKE '%gemini-3.5-flash%' OR LOWER(u.model) LIKE '%3.5-flash%' THEN 1.50
+              WHEN LOWER(u.model) LIKE '%gemini-3.1-pro-preview%' OR LOWER(u.model) LIKE '%3.1-pro%' THEN 2.00
+              WHEN LOWER(u.model) LIKE '%gemini-3-flash-preview%' OR LOWER(u.model) LIKE '%3-flash%' THEN 0.50
+              WHEN LOWER(u.model) LIKE '%flash-lite%' THEN 0.25
+              WHEN LOWER(u.model) LIKE '%flash%' THEN 1.50
+              WHEN LOWER(u.model) LIKE '%pro%' THEN 2.00
+              WHEN LOWER(u.model) LIKE '%ultra%' THEN 5.00
+              ELSE 1.50 
             END
           ) + 
           ((u.output_tokens + COALESCE(u.thinking_tokens, 0)) / 1000000) * COALESCE(
             p.output_cost_per_m,
             CASE 
-              WHEN u.model LIKE '%2.0-flash-exp%' THEN 0.0 
-              WHEN u.model LIKE '%pro%' THEN 5.00 
-              WHEN u.model LIKE '%flash-lite%' THEN 0.10
-              WHEN u.model LIKE '%flash%' THEN 0.30 
-              ELSE 0.0 
+              WHEN LOWER(u.model) LIKE '%gemini-3.5-flash-lite%' OR LOWER(u.model) LIKE '%3.5-flash-lite%' THEN 2.50
+              WHEN LOWER(u.model) LIKE '%gemini-3.1-flash-lite%' OR LOWER(u.model) LIKE '%3.1-flash-lite%' THEN 1.50
+              WHEN LOWER(u.model) LIKE '%gemini-3.6-flash%' OR LOWER(u.model) LIKE '%3.6-flash%' THEN 7.50
+              WHEN LOWER(u.model) LIKE '%gemini-3.5-flash%' OR LOWER(u.model) LIKE '%3.5-flash%' THEN 9.00
+              WHEN LOWER(u.model) LIKE '%gemini-3.1-pro-preview%' OR LOWER(u.model) LIKE '%3.1-pro%' THEN 12.00
+              WHEN LOWER(u.model) LIKE '%gemini-3-flash-preview%' OR LOWER(u.model) LIKE '%3-flash%' THEN 3.00
+              WHEN LOWER(u.model) LIKE '%flash-lite%' THEN 1.50
+              WHEN LOWER(u.model) LIKE '%flash%' THEN 7.50
+              WHEN LOWER(u.model) LIKE '%pro%' THEN 12.00
+              WHEN LOWER(u.model) LIKE '%ultra%' THEN 20.00
+              ELSE 7.50 
             END
           )
         ), 0.0) AS cost
