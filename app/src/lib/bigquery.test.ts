@@ -1,5 +1,134 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { getOverviewMetrics, getUsageOverTime, getTopUsers, getUserUsage, bq } from './bigquery';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { BigQueryService, getOverviewMetrics, getUsageOverTime, getTopUsers, getUserUsage, bq } from './bigquery';
+import { BigQuery } from '@google-cloud/bigquery';
+
+describe('BigQueryService project ID resolution and lifecycle', () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    process.env = { ...originalEnv };
+    (BigQueryService as any).instance = undefined;
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    (BigQueryService as any).instance = undefined;
+  });
+
+  it('should resolve project ID when PROJECT_ID is set', () => {
+    // Arrange
+    process.env.PROJECT_ID = 'test-primary-project';
+    delete process.env.GOOGLE_CLOUD_PROJECT;
+
+    // Act
+    const service = BigQueryService.getInstance();
+    const client = service.getClient();
+
+    // Assert
+    expect(client.projectId).toBe('test-primary-project');
+  });
+
+  it('should fallback to GOOGLE_CLOUD_PROJECT when PROJECT_ID is unset', () => {
+    // Arrange
+    delete process.env.PROJECT_ID;
+    process.env.GOOGLE_CLOUD_PROJECT = 'test-fallback-project';
+
+    // Act
+    const service = BigQueryService.getInstance();
+    const client = service.getClient();
+
+    // Assert
+    expect(client.projectId).toBe('test-fallback-project');
+  });
+
+  it('should prioritize PROJECT_ID over GOOGLE_CLOUD_PROJECT when both are provided', () => {
+    // Arrange
+    process.env.PROJECT_ID = 'primary-proj';
+    process.env.GOOGLE_CLOUD_PROJECT = 'fallback-proj';
+
+    // Act
+    const service = BigQueryService.getInstance();
+    const client = service.getClient();
+
+    // Assert
+    expect(client.projectId).toBe('primary-proj');
+  });
+
+  it('should throw an explicit error when neither PROJECT_ID nor GOOGLE_CLOUD_PROJECT is set', () => {
+    // Arrange
+    delete process.env.PROJECT_ID;
+    delete process.env.GOOGLE_CLOUD_PROJECT;
+
+    // Act & Assert
+    expect(() => BigQueryService.getInstance()).toThrow(
+      'Missing required environment variable: PROJECT_ID or GOOGLE_CLOUD_PROJECT must be set.'
+    );
+  });
+
+  it('should throw an explicit error when constructor is invoked directly without env vars', () => {
+    // Arrange
+    delete process.env.PROJECT_ID;
+    delete process.env.GOOGLE_CLOUD_PROJECT;
+
+    // Act & Assert
+    expect(() => new (BigQueryService as any)()).toThrow(
+      'Missing required environment variable: PROJECT_ID or GOOGLE_CLOUD_PROJECT must be set.'
+    );
+  });
+
+  it('should maintain singleton instance across multiple getInstance() calls', () => {
+    // Arrange
+    process.env.PROJECT_ID = 'singleton-test-project';
+
+    // Act
+    const instance1 = BigQueryService.getInstance();
+    const instance2 = BigQueryService.getInstance();
+
+    // Assert
+    expect(instance1).toBe(instance2);
+  });
+
+  it('should return empty array and skip query execution when NEXT_PHASE is phase-production-build', async () => {
+    // Arrange
+    process.env.PROJECT_ID = 'build-phase-project';
+    process.env.NEXT_PHASE = 'phase-production-build';
+    const service = BigQueryService.getInstance();
+    const querySpy = vi.spyOn(service.getClient(), 'query');
+
+    // Act
+    const result = await service.query('SELECT 1');
+
+    // Assert
+    expect(result).toEqual([]);
+    expect(querySpy).not.toHaveBeenCalled();
+  });
+
+  it('should return empty array when Table Not Found error occurs during query execution', async () => {
+    // Arrange
+    process.env.PROJECT_ID = 'test-table-not-found';
+    delete process.env.NEXT_PHASE;
+    const service = BigQueryService.getInstance();
+    vi.spyOn(service.getClient(), 'query').mockRejectedValueOnce(new Error('Not found: Table agy_consumption.usage_summary_daily'));
+
+    // Act
+    const result = await service.query('SELECT * FROM `agy_consumption.usage_summary_daily`');
+
+    // Assert
+    expect(result).toEqual([]);
+  });
+
+  it('should rethrow general query execution errors', async () => {
+    // Arrange
+    process.env.PROJECT_ID = 'test-error-handling';
+    delete process.env.NEXT_PHASE;
+    const service = BigQueryService.getInstance();
+    vi.spyOn(service.getClient(), 'query').mockRejectedValueOnce(new Error('Access Denied: User does not have bigquery.jobs.create'));
+
+    // Act & Assert
+    await expect(service.query('SELECT 1')).rejects.toThrow('Access Denied: User does not have bigquery.jobs.create');
+  });
+});
 
 describe('bigquery service helpers', () => {
   let querySpy: any;
