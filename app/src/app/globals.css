@@ -22,9 +22,31 @@
   --table-header-bg: var(--md-sys-color-surface-container-low);
   --table-border: var(--md-sys-color-outline-variant);
   --upload-zone-border: var(--md-sys-color-outline);
+  --upload-zone-border-hover: var(--md-sys-color-primary);
+  --upload-zone-border-error: var(--feedback-error-icon);
   --upload-zone-bg: var(--md-sys-color-surface);
   --upload-zone-bg-hover: var(--md-sys-color-surface-container-lowest);
   --upload-zone-bg-active: var(--md-sys-color-surface-container);
+  --upload-zone-bg-error: var(--feedback-error-bg);
+
+  /* Semantic Feedback: Success */
+  --feedback-success-bg: light-dark(#E8F5E9, #142817);
+  --feedback-success-border: light-dark(#A5D6A7, #2E7D32);
+  --feedback-success-text: light-dark(#1B5E20, #C8E6C9);
+  --feedback-success-icon: light-dark(#2E7D32, #81C784);
+  --feedback-success-badge-bg: light-dark(#C8E6C9, #1B4D20);
+  --feedback-success-badge-text: light-dark(#1B5E20, #E8F5E9);
+
+  /* Semantic Feedback: Error */
+  --feedback-error-bg: light-dark(#FDECEA, #2C1414);
+  --feedback-error-border: light-dark(#F5C6CB, #8C1D18);
+  --feedback-error-text: light-dark(#B3261E, #F2B8B5);
+  --feedback-error-icon: light-dark(#D32F2F, #E57373);
+
+  /* Semantic Feedback: Warning / Info */
+  --feedback-warning-bg: light-dark(#FFF8E1, #2B2105);
+  --feedback-warning-border: light-dark(#FFE082, #FFB300);
+  --feedback-warning-text: light-dark(#8D6E00, #FFE082);
 
   /* MD3 Color Palette - Indigo/Violet Theme */
   --md-sys-color-primary: light-dark(#6750A4, #D0BCFF);
@@ -662,3 +684,39 @@ button {
     background-color: var(--upload-zone-bg-active);
   }
 }
+
+/* Feedback Banner Slide-In */
+@keyframes feedbackSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Dropzone Error Shake on Validation Failure */
+@keyframes dropzoneErrorShake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-4px); }
+  40%, 80% { transform: translateX(4px); }
+}
+
+/* Indeterminate Progress Loading Bar */
+@keyframes indeterminate-progress {
+  0% {
+    left: -35%;
+    width: 35%;
+  }
+  60% {
+    left: 100%;
+    width: 100%;
+  }
+  100% {
+    left: 100%;
+    width: 0%;
+  }
+}
+
