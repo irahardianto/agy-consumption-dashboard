@@ -1,5 +1,6 @@
 import { bq } from '@/lib/bigquery';
 import logger from '@/lib/logger';
+import { getPricingCteSql, getCostSqlSnippet } from '@/lib/pricingSql';
 
 const DATASET = process.env.BQ_DATASET || 'agy_consumption';
 
@@ -39,15 +40,7 @@ export async function getUserSessions(
   endDate: string
 ): Promise<UserSession[]> {
   const query = `
-    WITH pricing AS (
-      SELECT
-        SPLIT(key, ':')[SAFE_OFFSET(1)] AS model,
-        MAX(CASE WHEN ENDS_WITH(key, ':input') THEN CAST(value AS FLOAT64) END) AS input_cost_per_m,
-        MAX(CASE WHEN ENDS_WITH(key, ':output') THEN CAST(value AS FLOAT64) END) AS output_cost_per_m
-      FROM \`${DATASET}.dashboard_settings\`
-      WHERE key LIKE 'pricing:%'
-      GROUP BY 1
-    ),
+    WITH ${getPricingCteSql({ dataset: DATASET })},
     raw_logs AS (
       SELECT
         logging_time,
@@ -117,38 +110,14 @@ export async function getUserSessions(
     attributed_with_cost AS (
       SELECT
         a.*,
-        (COALESCE(a.input_tokens, 0) / 1000000) * COALESCE(
-          p.input_cost_per_m,
-          CASE 
-            WHEN LOWER(a.raw_model_name) LIKE '%gemini-3.5-flash-lite%' OR LOWER(a.raw_model_name) LIKE '%3.5-flash-lite%' THEN 0.30
-            WHEN LOWER(a.raw_model_name) LIKE '%gemini-3.1-flash-lite%' OR LOWER(a.raw_model_name) LIKE '%3.1-flash-lite%' THEN 0.25
-            WHEN LOWER(a.raw_model_name) LIKE '%gemini-3.6-flash%' OR LOWER(a.raw_model_name) LIKE '%3.6-flash%' THEN 1.50
-            WHEN LOWER(a.raw_model_name) LIKE '%gemini-3.5-flash%' OR LOWER(a.raw_model_name) LIKE '%3.5-flash%' THEN 1.50
-            WHEN LOWER(a.raw_model_name) LIKE '%gemini-3.1-pro-preview%' OR LOWER(a.raw_model_name) LIKE '%3.1-pro%' THEN 2.00
-            WHEN LOWER(a.raw_model_name) LIKE '%gemini-3-flash-preview%' OR LOWER(a.raw_model_name) LIKE '%3-flash%' THEN 0.50
-            WHEN LOWER(a.raw_model_name) LIKE '%flash-lite%' THEN 0.25
-            WHEN LOWER(a.raw_model_name) LIKE '%flash%' THEN 1.50
-            WHEN LOWER(a.raw_model_name) LIKE '%pro%' THEN 2.00
-            WHEN LOWER(a.raw_model_name) LIKE '%ultra%' THEN 5.00
-            ELSE 1.50 
-          END
-        ) + 
-        ((COALESCE(a.output_tokens, 0) + COALESCE(a.thinking_tokens, 0)) / 1000000) * COALESCE(
-          p.output_cost_per_m,
-          CASE 
-            WHEN LOWER(a.raw_model_name) LIKE '%gemini-3.5-flash-lite%' OR LOWER(a.raw_model_name) LIKE '%3.5-flash-lite%' THEN 2.50
-            WHEN LOWER(a.raw_model_name) LIKE '%gemini-3.1-flash-lite%' OR LOWER(a.raw_model_name) LIKE '%3.1-flash-lite%' THEN 1.50
-            WHEN LOWER(a.raw_model_name) LIKE '%gemini-3.6-flash%' OR LOWER(a.raw_model_name) LIKE '%3.6-flash%' THEN 7.50
-            WHEN LOWER(a.raw_model_name) LIKE '%gemini-3.5-flash%' OR LOWER(a.raw_model_name) LIKE '%3.5-flash%' THEN 9.00
-            WHEN LOWER(a.raw_model_name) LIKE '%gemini-3.1-pro-preview%' OR LOWER(a.raw_model_name) LIKE '%3.1-pro%' THEN 12.00
-            WHEN LOWER(a.raw_model_name) LIKE '%gemini-3-flash-preview%' OR LOWER(a.raw_model_name) LIKE '%3-flash%' THEN 3.00
-            WHEN LOWER(a.raw_model_name) LIKE '%flash-lite%' THEN 1.50
-            WHEN LOWER(a.raw_model_name) LIKE '%flash%' THEN 7.50
-            WHEN LOWER(a.raw_model_name) LIKE '%pro%' THEN 12.00
-            WHEN LOWER(a.raw_model_name) LIKE '%ultra%' THEN 20.00
-            ELSE 7.50 
-          END
-        ) AS cost
+        ${getCostSqlSnippet({
+          usageAlias: 'a',
+          pricingAlias: 'p',
+          modelColumn: 'raw_model_name',
+          inputTokensColumn: 'input_tokens',
+          outputTokensColumn: 'output_tokens',
+          thinkingTokensColumn: 'thinking_tokens',
+        })} AS cost
       FROM attributed a
       LEFT JOIN pricing p ON a.model_name = p.model
     )
@@ -215,15 +184,7 @@ export async function getUsersWithDetails(
   endDate: string
 ): Promise<UserUsageWithDetails[]> {
   const userQuery = `
-    WITH pricing AS (
-      SELECT
-        SPLIT(key, ':')[SAFE_OFFSET(1)] AS model,
-        MAX(CASE WHEN ENDS_WITH(key, ':input') THEN CAST(value AS FLOAT64) END) AS input_cost_per_m,
-        MAX(CASE WHEN ENDS_WITH(key, ':output') THEN CAST(value AS FLOAT64) END) AS output_cost_per_m
-      FROM \`${DATASET}.dashboard_settings\`
-      WHERE key LIKE 'pricing:%'
-      GROUP BY 1
-    ),
+    WITH ${getPricingCteSql({ dataset: DATASET })},
     user_aggregated AS (
       SELECT 
         u.os_username,
@@ -233,40 +194,14 @@ export async function getUsersWithDetails(
         COALESCE(SUM(u.thinking_tokens), 0) AS thinking_tokens,
         COALESCE(SUM(u.total_tokens), 0) AS tokens,
         MAX(u.day) AS last_active,
-        COALESCE(SUM(
-          (u.input_tokens / 1000000) * COALESCE(
-            p.input_cost_per_m,
-            CASE 
-              WHEN LOWER(u.model) LIKE '%gemini-3.5-flash-lite%' OR LOWER(u.model) LIKE '%3.5-flash-lite%' THEN 0.30
-              WHEN LOWER(u.model) LIKE '%gemini-3.1-flash-lite%' OR LOWER(u.model) LIKE '%3.1-flash-lite%' THEN 0.25
-              WHEN LOWER(u.model) LIKE '%gemini-3.6-flash%' OR LOWER(u.model) LIKE '%3.6-flash%' THEN 1.50
-              WHEN LOWER(u.model) LIKE '%gemini-3.5-flash%' OR LOWER(u.model) LIKE '%3.5-flash%' THEN 1.50
-              WHEN LOWER(u.model) LIKE '%gemini-3.1-pro-preview%' OR LOWER(u.model) LIKE '%3.1-pro%' THEN 2.00
-              WHEN LOWER(u.model) LIKE '%gemini-3-flash-preview%' OR LOWER(u.model) LIKE '%3-flash%' THEN 0.50
-              WHEN LOWER(u.model) LIKE '%flash-lite%' THEN 0.25
-              WHEN LOWER(u.model) LIKE '%flash%' THEN 1.50
-              WHEN LOWER(u.model) LIKE '%pro%' THEN 2.00
-              WHEN LOWER(u.model) LIKE '%ultra%' THEN 5.00
-              ELSE 1.50 
-            END
-          ) + 
-          ((u.output_tokens + COALESCE(u.thinking_tokens, 0)) / 1000000) * COALESCE(
-            p.output_cost_per_m,
-            CASE 
-              WHEN LOWER(u.model) LIKE '%gemini-3.5-flash-lite%' OR LOWER(u.model) LIKE '%3.5-flash-lite%' THEN 2.50
-              WHEN LOWER(u.model) LIKE '%gemini-3.1-flash-lite%' OR LOWER(u.model) LIKE '%3.1-flash-lite%' THEN 1.50
-              WHEN LOWER(u.model) LIKE '%gemini-3.6-flash%' OR LOWER(u.model) LIKE '%3.6-flash%' THEN 7.50
-              WHEN LOWER(u.model) LIKE '%gemini-3.5-flash%' OR LOWER(u.model) LIKE '%3.5-flash%' THEN 9.00
-              WHEN LOWER(u.model) LIKE '%gemini-3.1-pro-preview%' OR LOWER(u.model) LIKE '%3.1-pro%' THEN 12.00
-              WHEN LOWER(u.model) LIKE '%gemini-3-flash-preview%' OR LOWER(u.model) LIKE '%3-flash%' THEN 3.00
-              WHEN LOWER(u.model) LIKE '%flash-lite%' THEN 1.50
-              WHEN LOWER(u.model) LIKE '%flash%' THEN 7.50
-              WHEN LOWER(u.model) LIKE '%pro%' THEN 12.00
-              WHEN LOWER(u.model) LIKE '%ultra%' THEN 20.00
-              ELSE 7.50 
-            END
-          )
-        ), 0.0) AS cost
+        COALESCE(SUM(${getCostSqlSnippet({
+          usageAlias: 'u',
+          pricingAlias: 'p',
+          modelColumn: 'model',
+          inputTokensColumn: 'input_tokens',
+          outputTokensColumn: 'output_tokens',
+          thinkingTokensColumn: 'thinking_tokens',
+        })}), 0.0) AS cost
       FROM \`${DATASET}.usage_summary_daily\` u
       LEFT JOIN pricing p ON u.model = p.model
       WHERE u.day >= CAST(@startDate AS DATE) AND u.day <= CAST(@endDate AS DATE)

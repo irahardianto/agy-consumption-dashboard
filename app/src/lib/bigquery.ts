@@ -1,91 +1,187 @@
-import { BigQuery, type Query } from '@google-cloud/bigquery';
+import { BigQuery } from '@google-cloud/bigquery';
+import crypto from 'crypto';
 import logger from './logger';
 import { redistributeUnattributed } from './cost';
+import { getPricingCteSql, getCostSqlSnippet } from './pricingSql';
+
+export interface QueryOptions {
+  query: string;
+  params?: Record<string, any>;
+  types?: Record<string, any>;
+  [key: string]: any;
+}
+
+export interface IBigQueryService {
+  query<T = any>(query: string | QueryOptions): Promise<T[]>;
+  getClient(): BigQuery;
+}
+
+declare global {
+  var __bigQueryServiceInstance: BigQueryService | undefined;
+}
+
+/**
+ * Generates an 8-character SHA-256 fingerprint for a SQL query string.
+ */
+export function getSqlFingerprint(sql: string): string {
+  const normalized = sql.replace(/\s+/g, ' ').trim();
+  return crypto.createHash('sha256').update(normalized).digest('hex').substring(0, 8);
+}
+
+/**
+ * Sanitizes parameters for logging by redacting sensitive keys and formatting objects/arrays.
+ */
+export function sanitizeLogParams(params?: Record<string, any>): Record<string, any> | undefined {
+  if (!params) return undefined;
+  const sanitized: Record<string, any> = {};
+  const sensitiveKeys = new Set(['email', 'token', 'jwt', 'secret', 'password', 'authorization']);
+
+  for (const [key, value] of Object.entries(params)) {
+    if (sensitiveKeys.has(key.toLowerCase())) {
+      sanitized[key] = '[REDACTED]';
+    } else if (Array.isArray(value)) {
+      sanitized[key] = `Array(length=${value.length})`;
+    } else if (typeof value === 'object' && value !== null) {
+      sanitized[key] = '[Object]';
+    } else {
+      sanitized[key] = value;
+    }
+  }
+  return sanitized;
+}
 
 /**
  * BigQuery client wrapper using the Singleton pattern.
  */
-export class BigQueryService {
-  private static instance: BigQueryService;
-  private client: BigQuery;
+export class BigQueryService implements IBigQueryService {
+  private client: BigQuery | null = null;
+  private projectId: string | null = null;
 
-  private constructor() {
-    const projectId = process.env.PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT;
-    if (!projectId) {
-      throw new Error('Missing required environment variable: PROJECT_ID or GOOGLE_CLOUD_PROJECT must be set.');
+  public constructor(customClient?: BigQuery) {
+    if (customClient) {
+      this.client = customClient;
     }
-    this.client = new BigQuery({ projectId });
-    logger.info({ projectId }, 'BigQuery client initialized');
+  }
+
+  private initClient(): BigQuery {
+    if (!this.client) {
+      const projectId = process.env.PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT;
+      if (!projectId) {
+        throw new Error(
+          'Missing required environment variable: PROJECT_ID or GOOGLE_CLOUD_PROJECT must be set.'
+        );
+      }
+      this.projectId = projectId;
+      this.client = new BigQuery({ projectId });
+      logger.info({ projectId }, 'BigQuery client lazily initialized');
+    }
+    return this.client;
   }
 
   public static getInstance(): BigQueryService {
-    if (!BigQueryService.instance) {
-      BigQueryService.instance = new BigQueryService();
+    if (!globalThis.__bigQueryServiceInstance) {
+      globalThis.__bigQueryServiceInstance = new BigQueryService();
     }
-    return BigQueryService.instance;
+    return globalThis.__bigQueryServiceInstance;
   }
 
   /**
-   * Execute a query and return results.
-   * @param query The SQL query or Query object.
-   * @param options Query options.
+   * For testing purposes: Allows injecting a mock service double.
    */
-  public async query<T>(query: string | Query): Promise<T[]> {
-    const start = Date.now();
-    const sql = typeof query === 'string' ? query : query.query;
-    const isBuild = process.env.NEXT_PHASE === 'phase-production-build';
-
-    // Short-circuit during build: no credentials available in Docker build environment.
-    // Pages are force-dynamic so this branch should never be hit in production.
-    if (isBuild) {
-      logger.info({ sql }, 'Build phase — skipping BigQuery query, returning empty array');
-      return [] as T[];
-    }
-
-    logger.debug({ sql }, 'Executing BigQuery query');
-
-    try {
-      const options = typeof query === 'string' ? { query } : query;
-      const [rows] = await (this.client.query(options) as any);
-      
-      logger.info({
-        operation: 'bigquery_query',
-        duration: Date.now() - start,
-        rowCount: rows.length,
-      }, 'BigQuery query successful');
-      
-      return rows as T[];
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      
-      logger.error({
-        operation: 'bigquery_query',
-        duration: Date.now() - start,
-        error: errorMsg,
-        sql,
-      }, 'BigQuery query failed');
-
-      // During build phase, return empty array instead of failing the build
-      if (isBuild || errorMsg.includes('Not found: Table')) {
-        return [] as T[];
-      }
-      
-      throw error;
-    }
+  public static setInstance(service?: BigQueryService): void {
+    globalThis.__bigQueryServiceInstance = service;
   }
 
   /**
    * Get the underlying BigQuery client.
    */
   public getClient(): BigQuery {
-    return this.client;
+    return this.initClient();
+  }
+
+  /**
+   * Execute a query and return results with 3-point logging and parameter masking.
+   */
+  public async query<T = any>(queryInput: string | QueryOptions): Promise<T[]> {
+    const start = Date.now();
+    const sql = typeof queryInput === 'string' ? queryInput : queryInput.query;
+    const params = typeof queryInput === 'object' ? queryInput.params : undefined;
+    const isBuild = process.env.NEXT_PHASE === 'phase-production-build';
+
+    const sqlFingerprint = getSqlFingerprint(sql);
+    const sanitizedParams = sanitizeLogParams(params);
+
+    // Short-circuit during build: no credentials available in Docker build environment.
+    if (isBuild) {
+      logger.info(
+        { operation: 'bigquery_query', sqlFingerprint },
+        'Build phase: skipping BigQuery execution, returning empty result'
+      );
+      return [] as T[];
+    }
+
+    // Point 1: Entry log (Debug level, fingerprinted)
+    logger.debug(
+      {
+        operation: 'bigquery_query',
+        sqlFingerprint,
+        params: sanitizedParams,
+      },
+      'Executing BigQuery query'
+    );
+
+    try {
+      const client = this.initClient();
+      const options = typeof queryInput === 'string' ? { query: queryInput } : queryInput;
+      const [rows] = await (client.query(options as any) as any);
+
+      const durationMs = Date.now() - start;
+
+      // Point 2: Success log (Info level)
+      logger.info(
+        {
+          operation: 'bigquery_query',
+          sqlFingerprint,
+          durationMs,
+          rowCount: rows.length,
+        },
+        'BigQuery query executed successfully'
+      );
+
+      return rows as T[];
+    } catch (error) {
+      const durationMs = Date.now() - start;
+      const errorMsg = error instanceof Error ? error.message : String(error);
+
+      // Point 3: Failure log (Error level, sanitized)
+      logger.error(
+        {
+          operation: 'bigquery_query',
+          sqlFingerprint,
+          durationMs,
+          error: errorMsg,
+          params: sanitizedParams,
+        },
+        'BigQuery query execution failed'
+      );
+
+      // During build phase, return empty array instead of failing the build
+      if (isBuild || errorMsg.includes('Not found: Table')) {
+        return [] as T[];
+      }
+
+      throw error;
+    }
   }
 }
 
-// Export a singleton instance
-export const bq = BigQueryService.getInstance();
+// Export singleton instance backed by globalThis
+export const bq: IBigQueryService = {
+  query: <T = any>(q: string | QueryOptions) => BigQueryService.getInstance().query<T>(q),
+  getClient: () => BigQueryService.getInstance().getClient(),
+};
 
-// --- Add back UI-helper functions using the singleton ---
+// --- UI-helper functions using the singleton ---
 
 export interface OverviewMetrics {
   totalRequests: number;
@@ -147,53 +243,12 @@ export async function getOverviewMetrics(
   endDate?: Date | string
 ): Promise<OverviewMetrics> {
   const query = `
-    WITH pricing AS (
-      SELECT
-        SPLIT(key, ':')[SAFE_OFFSET(1)] AS model,
-        MAX(CASE WHEN ENDS_WITH(key, ':input') THEN CAST(value AS FLOAT64) END) AS input_cost_per_m,
-        MAX(CASE WHEN ENDS_WITH(key, ':output') THEN CAST(value AS FLOAT64) END) AS output_cost_per_m
-      FROM \`${DATASET}.dashboard_settings\`
-      WHERE key LIKE 'pricing:%'
-      GROUP BY 1
-    )
+    WITH ${getPricingCteSql({ dataset: DATASET })}
     SELECT 
       COALESCE(SUM(u.request_count), 0) AS totalRequests,
       COUNT(DISTINCT CASE WHEN u.os_username != '__unattributed__' THEN u.os_username END) AS activeUsers,
       COALESCE(SUM(u.total_tokens), 0) AS totalTokens,
-      COALESCE(SUM(
-        (u.input_tokens / 1000000) * COALESCE(
-          p.input_cost_per_m,
-          CASE 
-            WHEN LOWER(u.model) LIKE '%gemini-3.5-flash-lite%' OR LOWER(u.model) LIKE '%3.5-flash-lite%' THEN 0.30
-            WHEN LOWER(u.model) LIKE '%gemini-3.1-flash-lite%' OR LOWER(u.model) LIKE '%3.1-flash-lite%' THEN 0.25
-            WHEN LOWER(u.model) LIKE '%gemini-3.6-flash%' OR LOWER(u.model) LIKE '%3.6-flash%' THEN 1.50
-            WHEN LOWER(u.model) LIKE '%gemini-3.5-flash%' OR LOWER(u.model) LIKE '%3.5-flash%' THEN 1.50
-            WHEN LOWER(u.model) LIKE '%gemini-3.1-pro-preview%' OR LOWER(u.model) LIKE '%3.1-pro%' THEN 2.00
-            WHEN LOWER(u.model) LIKE '%gemini-3-flash-preview%' OR LOWER(u.model) LIKE '%3-flash%' THEN 0.50
-            WHEN LOWER(u.model) LIKE '%flash-lite%' THEN 0.25
-            WHEN LOWER(u.model) LIKE '%flash%' THEN 1.50
-            WHEN LOWER(u.model) LIKE '%pro%' THEN 2.00
-            WHEN LOWER(u.model) LIKE '%ultra%' THEN 5.00
-            ELSE 1.50 
-          END
-        ) + 
-        ((u.output_tokens + COALESCE(u.thinking_tokens, 0)) / 1000000) * COALESCE(
-          p.output_cost_per_m,
-          CASE 
-            WHEN LOWER(u.model) LIKE '%gemini-3.5-flash-lite%' OR LOWER(u.model) LIKE '%3.5-flash-lite%' THEN 2.50
-            WHEN LOWER(u.model) LIKE '%gemini-3.1-flash-lite%' OR LOWER(u.model) LIKE '%3.1-flash-lite%' THEN 1.50
-            WHEN LOWER(u.model) LIKE '%gemini-3.6-flash%' OR LOWER(u.model) LIKE '%3.6-flash%' THEN 7.50
-            WHEN LOWER(u.model) LIKE '%gemini-3.5-flash%' OR LOWER(u.model) LIKE '%3.5-flash%' THEN 9.00
-            WHEN LOWER(u.model) LIKE '%gemini-3.1-pro-preview%' OR LOWER(u.model) LIKE '%3.1-pro%' THEN 12.00
-            WHEN LOWER(u.model) LIKE '%gemini-3-flash-preview%' OR LOWER(u.model) LIKE '%3-flash%' THEN 3.00
-            WHEN LOWER(u.model) LIKE '%flash-lite%' THEN 1.50
-            WHEN LOWER(u.model) LIKE '%flash%' THEN 7.50
-            WHEN LOWER(u.model) LIKE '%pro%' THEN 12.00
-            WHEN LOWER(u.model) LIKE '%ultra%' THEN 20.00
-            ELSE 7.50 
-          END
-        )
-      ), 0.0) AS totalCost
+      COALESCE(SUM(${getCostSqlSnippet({ usageAlias: 'u', pricingAlias: 'p' })}), 0.0) AS totalCost
     FROM \`${DATASET}.usage_summary_daily\` u
     LEFT JOIN pricing p ON u.model = p.model
     WHERE u.day >= COALESCE(CAST(@startDate AS DATE), DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY))
@@ -232,54 +287,13 @@ export async function getUsageOverTime(
   const userFilter = username ? 'AND u.os_username = @username' : '';
 
   const query = `
-    WITH pricing AS (
-      SELECT
-        SPLIT(key, ':')[SAFE_OFFSET(1)] AS model,
-        MAX(CASE WHEN ENDS_WITH(key, ':input') THEN CAST(value AS FLOAT64) END) AS input_cost_per_m,
-        MAX(CASE WHEN ENDS_WITH(key, ':output') THEN CAST(value AS FLOAT64) END) AS output_cost_per_m
-      FROM \`${DATASET}.dashboard_settings\`
-      WHERE key LIKE 'pricing:%'
-      GROUP BY 1
-    )
+    WITH ${getPricingCteSql({ dataset: DATASET })}
     SELECT 
       FORMAT_DATE('%Y-%m-%d', u.day) AS day,
       u.model,
       COALESCE(SUM(u.total_tokens), 0) AS tokens,
       COALESCE(SUM(u.request_count), 0) AS requests,
-      COALESCE(SUM(
-        (u.input_tokens / 1000000) * COALESCE(
-          p.input_cost_per_m,
-          CASE 
-            WHEN LOWER(u.model) LIKE '%gemini-3.5-flash-lite%' OR LOWER(u.model) LIKE '%3.5-flash-lite%' THEN 0.30
-            WHEN LOWER(u.model) LIKE '%gemini-3.1-flash-lite%' OR LOWER(u.model) LIKE '%3.1-flash-lite%' THEN 0.25
-            WHEN LOWER(u.model) LIKE '%gemini-3.6-flash%' OR LOWER(u.model) LIKE '%3.6-flash%' THEN 1.50
-            WHEN LOWER(u.model) LIKE '%gemini-3.5-flash%' OR LOWER(u.model) LIKE '%3.5-flash%' THEN 1.50
-            WHEN LOWER(u.model) LIKE '%gemini-3.1-pro-preview%' OR LOWER(u.model) LIKE '%3.1-pro%' THEN 2.00
-            WHEN LOWER(u.model) LIKE '%gemini-3-flash-preview%' OR LOWER(u.model) LIKE '%3-flash%' THEN 0.50
-            WHEN LOWER(u.model) LIKE '%flash-lite%' THEN 0.25
-            WHEN LOWER(u.model) LIKE '%flash%' THEN 1.50
-            WHEN LOWER(u.model) LIKE '%pro%' THEN 2.00
-            WHEN LOWER(u.model) LIKE '%ultra%' THEN 5.00
-            ELSE 1.50 
-          END
-        ) + 
-        ((u.output_tokens + COALESCE(u.thinking_tokens, 0)) / 1000000) * COALESCE(
-          p.output_cost_per_m,
-          CASE 
-            WHEN LOWER(u.model) LIKE '%gemini-3.5-flash-lite%' OR LOWER(u.model) LIKE '%3.5-flash-lite%' THEN 2.50
-            WHEN LOWER(u.model) LIKE '%gemini-3.1-flash-lite%' OR LOWER(u.model) LIKE '%3.1-flash-lite%' THEN 1.50
-            WHEN LOWER(u.model) LIKE '%gemini-3.6-flash%' OR LOWER(u.model) LIKE '%3.6-flash%' THEN 7.50
-            WHEN LOWER(u.model) LIKE '%gemini-3.5-flash%' OR LOWER(u.model) LIKE '%3.5-flash%' THEN 9.00
-            WHEN LOWER(u.model) LIKE '%gemini-3.1-pro-preview%' OR LOWER(u.model) LIKE '%3.1-pro%' THEN 12.00
-            WHEN LOWER(u.model) LIKE '%gemini-3-flash-preview%' OR LOWER(u.model) LIKE '%3-flash%' THEN 3.00
-            WHEN LOWER(u.model) LIKE '%flash-lite%' THEN 1.50
-            WHEN LOWER(u.model) LIKE '%flash%' THEN 7.50
-            WHEN LOWER(u.model) LIKE '%pro%' THEN 12.00
-            WHEN LOWER(u.model) LIKE '%ultra%' THEN 20.00
-            ELSE 7.50 
-          END
-        )
-      ), 0.0) AS cost
+      COALESCE(SUM(${getCostSqlSnippet({ usageAlias: 'u', pricingAlias: 'p' })}), 0.0) AS cost
     FROM \`${DATASET}.usage_summary_daily\` u
     LEFT JOIN pricing p ON u.model = p.model
     WHERE u.day >= COALESCE(CAST(@startDate AS DATE), DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY))
@@ -323,15 +337,7 @@ export async function getTopUsers(
   limit?: number
 ): Promise<UserUsage[]> {
   const query = `
-    WITH pricing AS (
-      SELECT
-        SPLIT(key, ':')[SAFE_OFFSET(1)] AS model,
-        MAX(CASE WHEN ENDS_WITH(key, ':input') THEN CAST(value AS FLOAT64) END) AS input_cost_per_m,
-        MAX(CASE WHEN ENDS_WITH(key, ':output') THEN CAST(value AS FLOAT64) END) AS output_cost_per_m
-      FROM \`${DATASET}.dashboard_settings\`
-      WHERE key LIKE 'pricing:%'
-      GROUP BY 1
-    ),
+    WITH ${getPricingCteSql({ dataset: DATASET })},
     user_aggregated AS (
       SELECT 
         u.os_username,
@@ -339,40 +345,7 @@ export async function getTopUsers(
         COALESCE(SUM(u.input_tokens), 0) AS input_tokens,
         COALESCE(SUM(u.output_tokens), 0) AS output_tokens,
         COALESCE(SUM(u.total_tokens), 0) AS tokens,
-        COALESCE(SUM(
-          (u.input_tokens / 1000000) * COALESCE(
-            p.input_cost_per_m,
-            CASE 
-              WHEN LOWER(u.model) LIKE '%gemini-3.5-flash-lite%' OR LOWER(u.model) LIKE '%3.5-flash-lite%' THEN 0.30
-              WHEN LOWER(u.model) LIKE '%gemini-3.1-flash-lite%' OR LOWER(u.model) LIKE '%3.1-flash-lite%' THEN 0.25
-              WHEN LOWER(u.model) LIKE '%gemini-3.6-flash%' OR LOWER(u.model) LIKE '%3.6-flash%' THEN 1.50
-              WHEN LOWER(u.model) LIKE '%gemini-3.5-flash%' OR LOWER(u.model) LIKE '%3.5-flash%' THEN 1.50
-              WHEN LOWER(u.model) LIKE '%gemini-3.1-pro-preview%' OR LOWER(u.model) LIKE '%3.1-pro%' THEN 2.00
-              WHEN LOWER(u.model) LIKE '%gemini-3-flash-preview%' OR LOWER(u.model) LIKE '%3-flash%' THEN 0.50
-              WHEN LOWER(u.model) LIKE '%flash-lite%' THEN 0.25
-              WHEN LOWER(u.model) LIKE '%flash%' THEN 1.50
-              WHEN LOWER(u.model) LIKE '%pro%' THEN 2.00
-              WHEN LOWER(u.model) LIKE '%ultra%' THEN 5.00
-              ELSE 1.50 
-            END
-          ) + 
-          ((u.output_tokens + COALESCE(u.thinking_tokens, 0)) / 1000000) * COALESCE(
-            p.output_cost_per_m,
-            CASE 
-              WHEN LOWER(u.model) LIKE '%gemini-3.5-flash-lite%' OR LOWER(u.model) LIKE '%3.5-flash-lite%' THEN 2.50
-              WHEN LOWER(u.model) LIKE '%gemini-3.1-flash-lite%' OR LOWER(u.model) LIKE '%3.1-flash-lite%' THEN 1.50
-              WHEN LOWER(u.model) LIKE '%gemini-3.6-flash%' OR LOWER(u.model) LIKE '%3.6-flash%' THEN 7.50
-              WHEN LOWER(u.model) LIKE '%gemini-3.5-flash%' OR LOWER(u.model) LIKE '%3.5-flash%' THEN 9.00
-              WHEN LOWER(u.model) LIKE '%gemini-3.1-pro-preview%' OR LOWER(u.model) LIKE '%3.1-pro%' THEN 12.00
-              WHEN LOWER(u.model) LIKE '%gemini-3-flash-preview%' OR LOWER(u.model) LIKE '%3-flash%' THEN 3.00
-              WHEN LOWER(u.model) LIKE '%flash-lite%' THEN 1.50
-              WHEN LOWER(u.model) LIKE '%flash%' THEN 7.50
-              WHEN LOWER(u.model) LIKE '%pro%' THEN 12.00
-              WHEN LOWER(u.model) LIKE '%ultra%' THEN 20.00
-              ELSE 7.50 
-            END
-          )
-        ), 0.0) AS cost
+        COALESCE(SUM(${getCostSqlSnippet({ usageAlias: 'u', pricingAlias: 'p' })}), 0.0) AS cost
       FROM \`${DATASET}.usage_summary_daily\` u
       LEFT JOIN pricing p ON u.model = p.model
       WHERE u.day >= COALESCE(CAST(@startDate AS DATE), DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY))
@@ -440,4 +413,3 @@ export async function getUserUsage(
   const allUsers = await getTopUsers(startDate, endDate);
   return allUsers.find(u => u.os_username === username) || null;
 }
-

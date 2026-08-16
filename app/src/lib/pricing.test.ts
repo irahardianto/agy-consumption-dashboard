@@ -200,25 +200,28 @@ describe('getPricingFromSettings', () => {
   });
 });
 
-describe('Cross-module Pricing Synchronization (cost.ts, bigquery.ts, db.ts)', () => {
+describe('Cross-module Pricing Synchronization (cost.ts, pricingSql.ts, bigquery.ts, db.ts)', () => {
   const readSource = (relPath: string): string => {
     const fullPath = path.resolve(__dirname, '..', relPath);
     return fs.readFileSync(fullPath, 'utf8');
   };
 
+  const pricingSqlSrc = readSource('lib/pricingSql.ts');
   const bigquerySrc = readSource('lib/bigquery.ts');
   const dbSrc = readSource('app/db.ts');
 
-  it('should ensure bigquery.ts and db.ts contain zero references to deprecated models', () => {
+  it('should ensure pricingSql.ts, bigquery.ts and db.ts contain zero references to deprecated models', () => {
     // Assert
+    expect(pricingSqlSrc).not.toContain('2.0-flash-exp');
     expect(bigquerySrc).not.toContain('2.0-flash-exp');
     expect(dbSrc).not.toContain('2.0-flash-exp');
+    expect(pricingSqlSrc).not.toContain('irahardianto-labs');
     expect(bigquerySrc).not.toContain('irahardianto-labs');
     expect(dbSrc).not.toContain('irahardianto-labs');
   });
 
-  it('should ensure bigquery.ts SQL fallback pricing matches cost.ts PRICING_DEFAULTS', () => {
-    // Verify each model in PRICING_DEFAULTS is explicitly matched with exact prices in bigquery.ts
+  it('should ensure pricingSql.ts SQL fallback pricing matches cost.ts PRICING_DEFAULTS', () => {
+    // Verify each model in PRICING_DEFAULTS is explicitly matched with exact prices in pricingSql.ts
     const expectedModelRates: Record<string, { input: number; output: number }> = {
       'gemini-3.6-flash': { input: 1.50, output: 7.50 },
       'gemini-3.5-flash': { input: 1.50, output: 9.00 },
@@ -230,46 +233,18 @@ describe('Cross-module Pricing Synchronization (cost.ts, bigquery.ts, db.ts)', (
 
     for (const [model, rates] of Object.entries(expectedModelRates)) {
       // Check input pricing
-      const inputPattern = new RegExp(`%${model}%.*?THEN\\s+${rates.input.toFixed(2)}`, 's');
-      expect(bigquerySrc).toMatch(inputPattern);
+      const inputPattern = new RegExp(`%${model}%.*?THEN\\s+\\$\\{PRICING_DEFAULTS\\['${model}'\\]\\.input\\.toFixed\\(2\\)\\}|%${model}%.*?THEN\\s+${rates.input.toFixed(2)}`, 's');
+      expect(pricingSqlSrc).toMatch(inputPattern);
 
       // Check output pricing
-      const outputPattern = new RegExp(`%${model}%.*?THEN\\s+${rates.output.toFixed(2)}`, 's');
-      expect(bigquerySrc).toMatch(outputPattern);
+      const outputPattern = new RegExp(`%${model}%.*?THEN\\s+\\$\\{PRICING_DEFAULTS\\['${model}'\\]\\.output\\.toFixed\\(2\\)\\}|%${model}%.*?THEN\\s+${rates.output.toFixed(2)}`, 's');
+      expect(pricingSqlSrc).toMatch(outputPattern);
     }
   });
 
-  it('should ensure db.ts SQL fallback pricing matches cost.ts PRICING_DEFAULTS', () => {
-    const expectedModelRates: Record<string, { input: number; output: number }> = {
-      'gemini-3.6-flash': { input: 1.50, output: 7.50 },
-      'gemini-3.5-flash': { input: 1.50, output: 9.00 },
-      'gemini-3.5-flash-lite': { input: 0.30, output: 2.50 },
-      'gemini-3.1-pro-preview': { input: 2.00, output: 12.00 },
-      'gemini-3.1-flash-lite': { input: 0.25, output: 1.50 },
-      'gemini-3-flash-preview': { input: 0.50, output: 3.00 },
-    };
-
-    for (const [model, rates] of Object.entries(expectedModelRates)) {
-      // Check input pricing in db.ts
-      const inputPattern = new RegExp(`%${model}%.*?THEN\\s+${rates.input.toFixed(2)}`, 's');
-      expect(dbSrc).toMatch(inputPattern);
-
-      // Check output pricing in db.ts
-      const outputPattern = new RegExp(`%${model}%.*?THEN\\s+${rates.output.toFixed(2)}`, 's');
-      expect(dbSrc).toMatch(outputPattern);
-    }
-  });
-
-  it('should maintain strict SQL CASE WHEN specificity order so specific models match before family wildcards', () => {
-    // Helper function that parses the order of WHEN conditions in a SQL CASE block
-    const extractWhenClauses = (src: string, label: string): string[] => {
-      const caseMatches = src.match(/CASE[\s\S]*?END/g) || [];
-      expect(caseMatches.length).toBeGreaterThan(0);
-      return caseMatches;
-    };
-
-    const bqCases = extractWhenClauses(bigquerySrc, 'bigquery.ts');
-    const dbCases = extractWhenClauses(dbSrc, 'db.ts');
+  it('should maintain strict SQL CASE WHEN specificity order in pricingSql.ts', () => {
+    const caseMatches = pricingSqlSrc.match(/CASE[\s\S]*?END/g) || [];
+    expect(caseMatches.length).toBeGreaterThan(0);
 
     const verifyCaseOrdering = (caseSql: string) => {
       // 3.5-flash-lite must appear before 3.5-flash and before wildcard %flash%
@@ -296,8 +271,7 @@ describe('Cross-module Pricing Synchronization (cost.ts, bigquery.ts, db.ts)', (
       }
     };
 
-    bqCases.forEach(verifyCaseOrdering);
-    dbCases.forEach(verifyCaseOrdering);
+    caseMatches.forEach(verifyCaseOrdering);
   });
 
   it('should correctly simulate BigQuery SQL fallback pricing evaluation against real model names', () => {
