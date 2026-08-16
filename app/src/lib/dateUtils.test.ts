@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveDateRange, buildRangeLabel } from './dateUtils';
+import { resolveDateRange, buildRangeLabel, toLocalDateString } from './dateUtils';
 
 // Helper: compute an expected date string using the same local-date logic the function uses
 function localDateString(offsetDays: number): string {
@@ -127,5 +127,27 @@ describe('buildRangeLabel', () => {
 
   it('returns "Custom Range" for preset=custom without dates', () => {
     expect(buildRangeLabel('custom')).toBe('Custom Range');
+  });
+});
+
+describe('toLocalDateString', () => {
+  it('formats Date in local YYYY-MM-DD format with padding', () => {
+    const d = new Date(2026, 0, 5); // Jan 5, 2026
+    expect(toLocalDateString(d)).toBe('2026-01-05');
+  });
+
+  it('correctly handles double digit months and days', () => {
+    const d = new Date(2025, 11, 25); // Dec 25, 2025
+    expect(toLocalDateString(d)).toBe('2025-12-25');
+  });
+
+  it('correctly formats leap year dates', () => {
+    const d = new Date(2024, 1, 29); // Feb 29, 2024
+    expect(toLocalDateString(d)).toBe('2024-02-29');
+  });
+
+  it('correctly formats year-end transition dates', () => {
+    const d = new Date(2025, 11, 31); // Dec 31, 2025
+    expect(toLocalDateString(d)).toBe('2025-12-31');
   });
 });
